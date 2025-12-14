@@ -6,19 +6,40 @@
 
 ## 📚 Documentation
 
-**New to this project? Start here:**
-- **[QUICK-START.md](QUICK-START.md)** - Fast setup guide for your system
-- **[ORCHESTRATION-MANUAL.md](ORCHESTRATION-MANUAL.md)** - Complete technical manual with:
-  - Step-by-step setup instructions
-  - 4 example workflows with use cases
-  - Docker containerization guide
-  - Troubleshooting and production tips
+### 🚀 Quick Start
 
-**Ready-to-use files:**
+**Choose your path:**
+
+| I want to... | Go to... |
+|-------------|----------|
+| **Set up from scratch** | [Orchestration-Manual/00-COMPLETE-SETUP-GUIDE.md](Orchestration-Manual/00-COMPLETE-SETUP-GUIDE.md) |
+| **Launch with Docker** | [Orchestration-Manual/DOCKER-LAUNCH-QUICKSTART.md](Orchestration-Manual/DOCKER-LAUNCH-QUICKSTART.md) |
+| **Browse all docs** | [Orchestration-Manual/README.md](Orchestration-Manual/README.md) |
+
+### 📖 Complete Documentation
+
+All documentation is organized in the **[Orchestration-Manual/](Orchestration-Manual/)** folder:
+
+**Core Guides:**
+- **[00-COMPLETE-SETUP-GUIDE.md](Orchestration-Manual/00-COMPLETE-SETUP-GUIDE.md)** - Complete A-Z setup (WSL-based)
+- **[DOCKER-LAUNCH-QUICKSTART.md](Orchestration-Manual/DOCKER-LAUNCH-QUICKSTART.md)** - One-command Docker launch
+- **[DISCORD-BOT-SETUP.md](Orchestration-Manual/DISCORD-BOT-SETUP.md)** - Detailed Discord bot configuration
+
+**Additional Resources:**
+- **[Part02-Workflow-Examples.md](Orchestration-Manual/Part02-Workflow-Examples.md)** - Example automation workflows
+- **[Part03-Easy-Startup.md](Orchestration-Manual/Part03-Easy-Startup.md)** - Auto-start scripts
+- **[Part05-Troubleshooting.md](Orchestration-Manual/Part05-Troubleshooting.md)** - Common issues and fixes
+- **[CONTAINERIZATION-FAQ.md](Orchestration-Manual/CONTAINERIZATION-FAQ.md)** - Docker questions answered
+
+**See [Orchestration-Manual/README.md](Orchestration-Manual/README.md) for complete index**
+
+### 🛠️ Ready-to-Use Files
+
 - `start-orchestration.bat` - One-click WSL startup
 - `start-docker.bat` / `stop-docker.bat` - Docker management
-- `workflows/` - Pre-built n8n workflow templates
 - `docker-compose.yml` - Complete containerized setup
+- `workflows/` - Pre-built n8n workflow templates
+- `discord-bot-docker/` - Discord bot for containers
 
 ---
 

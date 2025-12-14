@@ -35,7 +35,7 @@
 
 ---
 
-## What's Left to Do (30 minutes of work)
+## What's Left to Do (45-60 minutes of work)
 
 ### Step 1: Install ngrok (5 minutes)
 ```bash
@@ -55,26 +55,40 @@ ngrok config add-authtoken YOUR_TOKEN
 ngrok http 5678
 ```
 
-### Step 2: Configure Discord Webhook (5 minutes)
-1. In Discord, right-click your channel → Edit Channel
-2. Integrations → Webhooks → New Webhook
-3. Copy webhook URL
-4. Save changes
+### Step 2: Complete Discord Bot Setup (30-40 minutes)
+
+**Follow the complete guide:** [DISCORD-BOT-SETUP.md](DISCORD-BOT-SETUP.md)
+
+This includes:
+1. Discord Developer Portal configuration (Bot token, intents)
+2. Discord webhook creation (for responses)
+3. Node.js bot installation and setup
+4. Environment configuration
+5. Testing the complete flow
+6. Auto-start configuration
+
+**Quick summary:**
+1. Get Bot Token from Discord Developer Portal
+2. Enable MESSAGE CONTENT INTENT
+3. Create Discord webhook for responses
+4. Install Discord bot (`npm install discord.js axios dotenv`)
+5. Configure `.env` file with tokens
+6. Run bot: `node bot.js`
+7. Test: `!claude Tell me a joke`
 
 ### Step 3: Import Discord Workflow to n8n (10 minutes)
 1. Open n8n (http://localhost:5678)
 2. Import `workflows/4-discord-webhook-simple.json`
 3. Update the "Send to Discord" node with your Discord webhook URL
 4. Activate the workflow
-5. Get your ngrok URL from Step 1
-6. Test by sending POST request to: `https://YOUR-NGROK-URL/webhook/discord-claude`
 
-### Step 4: Test Everything (10 minutes)
-1. Send test message to n8n webhook
-2. See Claude's response in Discord
-3. Celebrate! 🎉
+### Step 4: Test Everything (5 minutes)
+1. All three terminals running (n8n, ngrok, Discord bot)
+2. In Discord: `!claude Tell me a joke about automation`
+3. See Claude's response appear in Discord
+4. Celebrate! 🎉
 
-**Detailed instructions**: See ORCHESTRATION-MANUAL.md starting at Step 14
+**Detailed instructions**: See [DISCORD-BOT-SETUP.md](DISCORD-BOT-SETUP.md) for complete Discord bot setup
 
 ---
 
@@ -84,6 +98,7 @@ ngrok http 5678
 C:\dev\GIT\automaton\
 ├── README.md                           # Original guide (updated with links)
 ├── ORCHESTRATION-MANUAL.md             # Complete 500+ line technical manual
+├── DISCORD-BOT-SETUP.md                # Complete Discord bot guide (NEW!)
 ├── QUICK-START.md                      # Quick reference guide
 ├── SESSION-SUMMARY.md                  # This file
 │
