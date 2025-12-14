@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n-orchestration
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=changeme
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=America/New_York
+      - DB_TYPE=sqlite
+      - DB_SQLITE_DATABASE=/home/node/.n8n/database.sqlite
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./workflows:/home/node/.n8n/workflows
+    restart: unless-stopped
+    networks:
+      - orchestration-net
+
+  claude-runner:
+    image: ubuntu:22.04
+    container_name: claude-code-runner
+    command: /bin/bash -c "
+      apt update &&
+      apt install -y curl openssh-server sudo &&
+      curl -fsSL https://deb.nodesource.com/setup_20.x | bash - &&
+      apt-get install -y nodejs &&
+      npm install -g @anthropic-ai/claude-code &&
+      mkdir -p /var/run/sshd &&
+      echo 'root:docker' | chpasswd &&
+      sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config &&
+      /usr/sbin/sshd -D"
+    ports:
+      - "2222:22"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - claude-data:/root
+      - ./projects:/workspace
+    restart: unless-stopped
+    networks:
+      - orchestration-net
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ngrok-tunnel
+    command: http n8n:5678
+    ports:
+      - "4040:4040"
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    depends_on:
+      - n8n
+    restart: unless-stopped
+    networks:
+      - orchestration-net
+
+volumes:
+  n8n-data:
+  claude-data:
+
+networks:
+  orchestration-net:
+    driver: bridge
