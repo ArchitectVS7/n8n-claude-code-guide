@@ -154,7 +154,7 @@
     },
     {
       "parameters": {
-        "command": "=cd {{ $json.projectPath }} && claude {{ $json.resumeFlag }}{{ $json.sessionFlag }} --dangerously-skip-permissions -p \"$(echo '{{ $json.promptBase64 }}' | base64 -d)\""
+        "command": "=cd {{ $json.projectPath }} && timeout 300 claude {{ $json.resumeFlag }}{{ $json.sessionFlag }} --dangerously-skip-permissions -p \"$(echo '{{ $json.promptBase64 }}' | base64 -d)\""
       },
       "name": "Dreamer Turn",
       "type": "n8n-nodes-base.ssh",
@@ -186,7 +186,7 @@
     },
     {
       "parameters": {
-        "command": "=cd {{ $json.projectPath }} && claude -r {{ $json.sessionId }} --dangerously-skip-permissions -p \"$(echo '{{ $json.promptBase64 }}' | base64 -d)\""
+        "command": "=cd {{ $json.projectPath }} && timeout 300 claude -r {{ $json.sessionId }} --dangerously-skip-permissions -p \"$(echo '{{ $json.promptBase64 }}' | base64 -d)\""
       },
       "name": "Doer Turn",
       "type": "n8n-nodes-base.ssh",
@@ -238,7 +238,7 @@
     },
     {
       "parameters": {
-        "command": "=cd {{ $json.projectPath }} && claude -r {{ $json.sessionId }} --dangerously-skip-permissions -p \"$(echo '{{ $json.promptBase64 }}' | base64 -d)\""
+        "command": "=cd {{ $json.projectPath }} && timeout 600 claude -r {{ $json.sessionId }} --dangerously-skip-permissions -p \"$(echo '{{ $json.promptBase64 }}' | base64 -d)\""
       },
       "name": "Synthesize Vision",
       "type": "n8n-nodes-base.ssh",
@@ -257,7 +257,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Get data from upstream nodes\n  const writeOutput = $('Write Vision File').first().json;\n  const preparedData = $('Prepare Vision File').first().json;\n\n  // Get session data from Record Doer & Evaluate (last round)\n  const sessionData = $('Record Doer & Evaluate').first().json;\n  const config = sessionData.config;\n  const sessionId = sessionData.sessionId;\n  const rounds = sessionData.currentRound;\n\n  // Parse the written filenames from SSH output\n  const writtenMessage = writeOutput.stdout || '';\n  const outputDir = preparedData.dirPath;\n\n  // Extract base names (actual filenames will be versioned if files existed)\n  const conversationLogBase = preparedData.journeyBaseName + '.md';\n  const visionDocBase = preparedData.visionBaseName + '.md';\n\n  return [{\n    json: {\n      success: true,\n      orchestration_type: config.orchestration.type,\n      project_name: config.orchestration.project_name,\n      session_id: sessionId,\n      rounds_completed: rounds,\n      aha_detected: sessionData.ahaDetected,\n      output_directory: outputDir,\n      conversation_log_file: conversationLogBase,\n      vision_file: visionDocBase,\n      write_result: writtenMessage,\n      preview: 'Two documents created: conversation log and vision document'\n    }\n  }];"
+        "jsCode": "// Get SSH output from input (Write Vision File node)\n  const writtenMessage = $input.item.json.stdout || '';\n\n  // Get prepared data from upstream node\n  const preparedData = $('Prepare Vision File').first().json;\n\n  // Get session data from Record Doer & Evaluate (last round)\n  const sessionData = $('Record Doer & Evaluate').first().json;\n  const config = sessionData.config;\n  const sessionId = sessionData.sessionId;\n  const rounds = sessionData.currentRound;\n\n  const outputDir = preparedData.dirPath;\n\n  // Extract base names (actual filenames will be versioned if files existed)\n  const conversationLogBase = preparedData.journeyBaseName + '.md';\n  const visionDocBase = preparedData.visionBaseName + '.md';\n\n  return [{\n    json: {\n      success: true,\n      orchestration_type: config.orchestration.type,\n      project_name: config.orchestration.project_name,\n      session_id: sessionId,\n      rounds_completed: rounds,\n      aha_detected: sessionData.ahaDetected,\n      output_directory: outputDir,\n      conversation_log_file: conversationLogBase,\n      vision_file: visionDocBase,\n      write_result: writtenMessage,\n      preview: 'Two documents created: conversation log and vision document'\n    }\n  }];"
       },
       "name": "Build Response",
       "type": "n8n-nodes-base.code",
@@ -384,7 +384,7 @@
     },
     {
       "parameters": {
-        "jsCode": "  // Get session data from Record Doer & Evaluate (upstream, not input)\n  const sessionData = $('Record Doer & Evaluate').first().json;\n\n  const prompt = 'PERSONA:\\n' + sessionData.personas.synthesizer + '\\n\\n' +\n    'CONTEXT:\\n' +\n    'You are the Synthesizer. The Dreamer and Doer had ' + sessionData.currentRound + ' rounds of conversation.\\n\\n' +\n    'FULL CONVERSATION:\\n' + sessionData.conversationHistory.join('\\n\\n') + '\\n\\n' +\n    'Your task: Create TWO documents.\\n\\n' +\n    'DOCUMENT 1: CONVERSATION LOG (' + sessionData.projectName + '-ideation-full.md)\\n' +\n    'Organize exact quotes by round:\\n' +\n    '## Round 1\\n' +\n    '**DREAMER:** [exact quote]\\n' +\n    '**DOER:** [exact quote]\\n' +\n    '[Repeat for all ' + sessionData.currentRound + ' rounds]\\n\\n' +\n    'DOCUMENT 2: VISION (' + sessionData.projectName + '-vision.md)\\n' +\n    'Professional synthesis with sections:\\n' +\n    '1. Core Concept\\n2. Ah-Ha Insight\\n3. Key Features\\n4. MVP Scope\\n' +\n    '5. Technical Direction\\n6. Future Possibilities\\n7. User Impact\\n8. Next Steps\\n\\n' +\n    'SEPARATOR: Place exactly three lines of dashes between documents:\\n' +\n    '---\\\\n---\\\\n---\\n\\n' +\n    'IMPORTANT: Stay neutral. Just organize and structure content.';\n\n  const promptBase64 = Buffer.from(prompt).toString('base64');\n\n  return [{\n    json: {\n      ...sessionData,\n      promptBase64: promptBase64\n    }\n  }];"
+        "jsCode": "  // Get session data - try from input first (from Continue Rounds IF), then upstream\n  let sessionData;\n  try {\n    sessionData = $input.item.json;\n  } catch (e) {\n    sessionData = $('Record Doer & Evaluate').first().json;\n  }\n\n  const prompt = 'PERSONA:\\n' + sessionData.personas.synthesizer + '\\n\\n' +\n    'CONTEXT:\\n' +\n    'You are the Synthesizer. The Dreamer and Doer had ' + sessionData.currentRound + ' rounds of conversation.\\n\\n' +\n    'FULL CONVERSATION:\\n' + sessionData.conversationHistory.join('\\n\\n') + '\\n\\n' +\n    'Your task: Create TWO documents.\\n\\n' +\n    'DOCUMENT 1: CONVERSATION LOG (' + sessionData.projectName + '-ideation-full.md)\\n' +\n    'Organize exact quotes by round:\\n' +\n    '## Round 1\\n' +\n    '**DREAMER:** [exact quote]\\n' +\n    '**DOER:** [exact quote]\\n' +\n    '[Repeat for all ' + sessionData.currentRound + ' rounds]\\n\\n' +\n    'DOCUMENT 2: VISION (' + sessionData.projectName + '-vision.md)\\n' +\n    'Professional synthesis with sections:\\n' +\n    '1. Core Concept\\n2. Ah-Ha Insight\\n3. Key Features\\n4. MVP Scope\\n' +\n    '5. Technical Direction\\n6. Future Possibilities\\n7. User Impact\\n8. Next Steps\\n\\n' +\n    'SEPARATOR: Place exactly three lines of dashes between documents:\\n' +\n    '---\\\\n---\\\\n---\\n\\n' +\n    'IMPORTANT: Stay neutral. Just organize and structure content.';\n\n  const promptBase64 = Buffer.from(prompt).toString('base64');\n\n  return [{\n    json: {\n      ...sessionData,\n      promptBase64: promptBase64\n    }\n  }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -635,13 +635,7 @@
     },
     "Append Log": {
       "main": [
-        [
-          {
-            "node": "Continue Rounds?",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Prepare Vision File": {
@@ -704,6 +698,11 @@
         [
           {
             "node": "Append Log",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Continue Rounds?",
             "type": "main",
             "index": 0
           }

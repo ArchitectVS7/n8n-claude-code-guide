@@ -1,0 +1,38 @@
+{
+  "orchestration": {
+    "type": "ideation",
+    "project_name": "test-idea",
+    "project_path": "/workspace/GIT/automaton",
+    "session_id": null
+  },
+  "input": {
+    "idea_file": null,
+    "idea_text": "A simple task management app that helps developers track their coding tasks with AI-powered priority suggestions based on deadline, complexity, and dependencies.",
+    "context_files": []
+  },
+  "output": {
+    "artifacts_path": ".thursian/projects/{project_name}/visions",
+    "filename": "vision-v1.md",
+    "metadata_path": ".thursian/projects/{project_name}/project-metadata.json"
+  },
+  "parameters": {
+    "max_rounds": 8,
+    "personas": {
+      "dreamer": ".thursian/personas/ideation/dreamer.md",
+      "doer": ".thursian/personas/ideation/doer.md",
+      "synthesizer": ".thursian/personas/ideation/synthesizer.md"
+    },
+    "aha_triggers": [
+      "ah-ha",
+      "aha moment",
+      "let me call",
+      "I see it now",
+      "this is it"
+    ],
+    "memory_namespace": "dialectic/{session_id}"
+  },
+  "webhook": {
+    "url": "http://localhost:5678/webhook/orchestrate",
+    "response_mode": "sync"
+  }
+}
