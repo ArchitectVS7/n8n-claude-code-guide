@@ -1,0 +1,21 @@
+
+{
+  "tasks": [
+    {
+      "id": "task-001",
+      "title": "Implement user login endpoint",
+      "priority": "high",
+      "status": "pending",
+      "spec_path": ".thursian/specs/auth-login.md",
+      "notes": "Must validate email + password; ties to PRD §2.1"
+    },
+    {
+      "id": "task-002",
+      "title": "Add test coverage for workflow routing",
+      "priority": "medium",
+      "status": "pending",
+      "spec_path": ".thursian/specs/workflow-routing.md",
+      "notes": ""
+    }
+  ]
+}

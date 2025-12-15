@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "Thursian Session State Tracker",
+  "description": "Real-time session state tracking for workflow execution",
+
+  "session_id": "{{workflow-name}}-{{timestamp}}",
+  "workflow": "{{workflow-name}}",
+  "workflow_file": ".thursian/workflows/{{workflow-file}}.yaml",
+  "project_name": "{{project-name}}",
+
+  "started_at": "{{ISO-8601-timestamp}}",
+  "updated_at": "{{ISO-8601-timestamp}}",
+  "completed_at": null,
+  "status": "in-progress",
+
+  "execution_mode": "manual",
+
+  "agents": {
+    "active": ["{{agent-1}}", "{{agent-2}}"],
+    "completed": [],
+    "pending": ["{{agent-3}}"],
+    "failed": []
+  },
+
+  "state_machine": {
+    "entry_state": "{{entry-state}}",
+    "current_state": "{{current-state}}",
+    "previous_state": "{{previous-state}}",
+    "next_state": "{{next-state}}",
+    "total_states": 0,
+    "completed_states": 0,
+    "exit_states": ["complete"],
+    "error_state": null
+  },
+
+  "memory_operations": {
+    "backend": "agentdb",
+    "namespace": "thursian/{{project-name}}/{{workflow}}",
+    "keys_written": [
+      "{{namespace}}/{{key-1}}",
+      "{{namespace}}/{{key-2}}"
+    ],
+    "keys_read": [
+      "{{namespace}}/{{key-1}}"
+    ],
+    "total_reads": 0,
+    "total_writes": 0
+  },
+
+  "artifacts_generated": [],
+
+  "conversation_rounds": {
+    "total_rounds": 0,
+    "completed_rounds": 0,
+    "current_round": null,
+    "rounds": []
+  },
+
+  "errors": [],
+
+  "checkpoints": [
+    {
+      "state": "{{state-name}}",
+      "timestamp": "{{ISO-8601-timestamp}}",
+      "memory_snapshot": "{{memory-key}}"
+    }
+  ],
+
+  "resume_instructions": "Resume from {{current-state}} state with memory context from {{namespace}}",
+
+  "performance": {
+    "start_time": "{{ISO-8601-timestamp}}",
+    "elapsed_seconds": 0,
+    "estimated_remaining_seconds": null,
+    "states_per_minute": 0
+  },
+
+  "metadata": {
+    "executor": "manual|claude-flow|n8n",
+    "environment": "local|cloud",
+    "version": "2.0.0"
+  }
+}

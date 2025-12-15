@@ -1,0 +1,524 @@
+name: engineering_board
+description: >
+  Technical evaluation and decision-making template. A board of technical experts
+  evaluates inputs, discusses, categorizes, and produces decisions or documents.
+  Used for PRD creation, architecture design, triage, and approval gates.
+
+version: 1.0.0
+template_type: evaluation
+
+# Template Parameters
+parameters:
+  required:
+    - name: board_chair
+      type: agent_config
+      description: "Agent who leads the board"
+    - name: board_members
+      type: agent_config_list
+      description: "List of board member agents"
+    - name: context_input
+      type: file_reference_list
+      description: "Input documents to evaluate"
+    - name: output_path
+      type: path_template
+      description: "Where to write the output"
+
+  optional:
+    - name: evaluation_type
+      type: enum
+      options: [create, review, triage, approve, design]
+      default: review
+      description: "Type of evaluation to perform"
+    - name: output_type
+      type: enum
+      options: [prd, triage_report, approval_report, adrs, architecture, recommendation]
+      default: recommendation
+      description: "Type of output document"
+    - name: parallel_research
+      type: boolean
+      default: false
+      description: "Enable parallel technical research"
+    - name: researcher
+      type: agent_config
+      description: "Research agent if enabled"
+    - name: writer
+      type: agent_config
+      default: default_writer
+      description: "Agent who produces final document"
+    - name: approval_threshold
+      type: float
+      default: 0.0
+      description: "Required approval percentage (0 = no voting, 0.95 = 95%)"
+    - name: max_iterations
+      type: integer
+      default: 1
+      description: "Maximum review/revision iterations"
+    - name: triage_categories
+      type: string_list
+      default: [mvp_critical, alpha, beta, post_launch, out_of_scope]
+      description: "Categories for feature triage"
+    - name: review_dimensions
+      type: dimension_list
+      description: "Dimensions to evaluate (for approval type)"
+    - name: require_unanimous
+      type: boolean
+      default: false
+      description: "Require all members to approve"
+    - name: spawn_substages
+      type: boolean
+      default: false
+      description: "Dynamically spawn substages based on content"
+    - name: substage_domains
+      type: string_list
+      description: "Domains that may spawn substages"
+
+memory:
+  backend: agentdb
+  namespace_template: "engineering_board/{session_id}"
+
+agents:
+
+  - id: board_chair
+    role: evaluation_leader
+    from_param: board_chair
+    tools: [memory.read, memory.write]
+    config:
+      manages: [agenda, discussion_flow, voting, iterations]
+      ensures: [thorough_evaluation, fair_process, clear_outcome]
+
+  - id: board_members
+    role: technical_evaluators
+    from_param: board_members
+    count: dynamic
+    tools: [memory.read, memory.write]
+    config:
+      provides: [technical_expertise, domain_knowledge, evaluation]
+      participates_in: [discussion, voting]
+
+  - id: researcher
+    role: technical_researcher
+    enabled_by: parallel_research
+    from_param: researcher
+    default_persona: .thursian/personas/research/technical-researcher.md
+    tools: [memory.read, memory.write, web.search, web.fetch]
+    config:
+      researches: [technologies, patterns, competitors, best_practices]
+      runs_parallel: true
+
+  - id: writer
+    role: document_author
+    from_param: writer
+    default_persona: .thursian/personas/ideation/synthesizer.md
+    tools: [memory.read, filesystem.write]
+    output_contract:
+      - type: document
+        format_from_param: output_type
+        path_from_param: output_path
+
+workflow:
+
+  entry_state: initialize
+  exit_states: [evaluation_complete, approved, not_approved, escalated]
+
+  states:
+
+    initialize:
+      agent: board_chair
+      description: "Load context and prepare board session"
+      actions:
+        - type: filesystem.read
+          paths_from_param: context_input
+        - type: initialize_session
+          set:
+            - evaluation_type_from_param: evaluation_type
+            - iteration: 1
+            - max_iterations_from_param: max_iterations
+            - approval_threshold_from_param: approval_threshold
+            - board_size: count(board_members)
+        - type: prepare_agenda
+          based_on: evaluation_type
+        - type: start_researcher_if_enabled
+          condition: parallel_research
+        - type: memory.write
+          key: session_initialized
+      transitions:
+        on_success: open_session
+
+    open_session:
+      agent: board_chair
+      description: "Open the board session"
+      actions:
+        - type: introduce_session
+          include:
+            - evaluation_purpose
+            - input_summary
+            - board_members_present
+            - evaluation_criteria
+            - expected_outcome
+        - type: present_materials
+          from: context_input
+        - type: memory.write
+          key: session_opened
+      transitions:
+        if_type_create: parallel_creation
+        if_type_review: parallel_review
+        if_type_triage: parallel_triage
+        if_type_approve: parallel_approval
+        if_type_design: check_substages
+
+    # CREATE MODE - Board collaboratively creates a document (e.g., PRD)
+
+    parallel_creation:
+      description: "Board members contribute to document creation"
+      parallel_agents: board_members
+
+      each_member:
+        actions:
+          - type: memory.read
+            scope: context
+          - type: read_research_if_available
+            from: researcher
+          - type: contribute_expertise
+            from_persona: true
+            focus: domain_relevant_sections
+          - type: propose_content
+            for_sections: relevant_to_expertise
+          - type: memory.write
+            key: contribution_{member_id}
+
+      transitions:
+        on_all_complete: synthesize_creation
+
+    synthesize_creation:
+      agent: board_chair
+      description: "Synthesize member contributions into draft"
+      actions:
+        - type: memory.read
+          scope: all_contributions
+        - type: integrate_contributions
+          resolve_conflicts: true
+          ensure_consistency: true
+        - type: create_draft
+          format_from_param: output_type
+        - type: memory.write
+          key: draft_created
+      transitions:
+        on_success: review_draft
+
+    review_draft:
+      description: "Board reviews the synthesized draft"
+      parallel_agents: board_members
+
+      each_member:
+        actions:
+          - type: memory.read
+            key: draft
+          - type: review_for
+            checks: [completeness, accuracy, consistency, feasibility]
+          - type: provide_feedback
+            types: [approval, suggestion, concern, objection]
+          - type: memory.write
+            key: review_{member_id}
+
+      transitions:
+        on_all_complete: evaluate_draft_feedback
+
+    evaluate_draft_feedback:
+      agent: board_chair
+      actions:
+        - type: aggregate_feedback
+        - type: determine_consensus
+        - type: decide_next
+          if_approved: finalize_output
+          if_needs_revision: revise_draft
+          if_max_iterations: finalize_output
+      transitions:
+        dynamic: true
+
+    revise_draft:
+      agent: writer
+      actions:
+        - type: memory.read
+          scope: [draft, feedback]
+        - type: apply_feedback
+        - type: increment_iteration
+        - type: memory.write
+          key: draft_revised
+      transitions:
+        on_success: review_draft
+
+    # REVIEW MODE - Board reviews existing document
+
+    parallel_review:
+      description: "Board members review input documents"
+      parallel_agents: board_members
+
+      each_member:
+        actions:
+          - type: memory.read
+            scope: context
+          - type: review_documents
+            from: context_input
+            using: expertise
+          - type: identify_issues
+            categories: [blocking, major, minor, observation]
+          - type: provide_assessment
+            include: [strengths, concerns, recommendations]
+          - type: memory.write
+            key: review_{member_id}
+
+      transitions:
+        on_all_complete: aggregate_reviews
+
+    aggregate_reviews:
+      agent: board_chair
+      actions:
+        - type: memory.read
+          scope: all_reviews
+        - type: aggregate_findings
+          group_by: [category, severity]
+        - type: identify_consensus
+        - type: identify_disagreements
+        - type: memory.write
+          key: aggregated_review
+      transitions:
+        on_success: finalize_output
+
+    # TRIAGE MODE - Board categorizes features/feedback
+
+    parallel_triage:
+      description: "Board members triage items into categories"
+      parallel_agents: board_members
+
+      each_member:
+        actions:
+          - type: memory.read
+            scope: context
+          - type: for_each_item
+            in: items_to_triage
+            actions:
+              - evaluate_item
+              - assign_category_from_param: triage_categories
+              - provide_rationale
+          - type: memory.write
+            key: triage_{member_id}
+
+      transitions:
+        on_all_complete: resolve_triage
+
+    resolve_triage:
+      agent: board_chair
+      description: "Resolve triage disagreements"
+      actions:
+        - type: memory.read
+          scope: all_triage
+        - type: find_consensus_categories
+        - type: identify_disagreements
+        - type: facilitate_resolution
+          for_each: disagreement
+          method: discussion_then_vote
+        - type: finalize_triage
+        - type: memory.write
+          key: triage_resolved
+      transitions:
+        on_success: finalize_output
+
+    # APPROVE MODE - Board votes on approval
+
+    parallel_approval:
+      description: "Board members evaluate for approval"
+      parallel_agents: board_members
+
+      each_member:
+        actions:
+          - type: memory.read
+            scope: context
+          - type: evaluate_dimensions
+            dimensions_from_param: review_dimensions
+          - type: calculate_dimension_scores
+          - type: identify_issues
+            severity: [blocking, major, minor, observation]
+          - type: cast_vote
+            options: [approve, approve_with_conditions, reject]
+          - type: provide_rationale
+          - type: memory.write
+            key: approval_{member_id}
+
+      transitions:
+        on_all_complete: aggregate_approval
+
+    aggregate_approval:
+      agent: board_chair
+      description: "Aggregate votes and determine outcome"
+      actions:
+        - type: memory.read
+          scope: all_approvals
+        - type: count_votes
+          calculate: approval_percentage
+        - type: aggregate_issues
+          by: [severity, dimension]
+        - type: calculate_dimension_scores
+          method: average_across_members
+        - type: determine_outcome
+          threshold_from_param: approval_threshold
+          unanimous_from_param: require_unanimous
+        - type: memory.write
+          key: approval_outcome
+      transitions:
+        if_approved: create_approval_report
+        if_not_approved_can_iterate: issue_resolution
+        if_not_approved_max_iterations: create_escalation_report
+
+    issue_resolution:
+      description: "Resolve blocking issues"
+      actions:
+        - type: memory.read
+          scope: blocking_issues
+        - type: for_each_issue
+          actions:
+            - discuss_resolution
+            - propose_fix
+            - validate_fix
+        - type: increment_iteration
+        - type: memory.write
+          key: issues_resolved
+      transitions:
+        on_success: parallel_approval
+
+    create_approval_report:
+      agent: writer
+      actions:
+        - type: memory.read
+          scope: approval_outcome
+        - type: create_report
+          template: approval_report
+          status: APPROVED
+        - type: filesystem.write
+          path_from_param: output_path
+      transitions:
+        on_success: approved
+
+    create_escalation_report:
+      agent: writer
+      actions:
+        - type: memory.read
+          scope: approval_outcome
+        - type: create_report
+          template: escalation_report
+          status: ESCALATED
+        - type: filesystem.write
+          path_from_param: output_path
+      transitions:
+        on_success: escalated
+
+    # DESIGN MODE - Spawn substages for different domains
+
+    check_substages:
+      agent: board_chair
+      description: "Determine which substages to spawn"
+      actions:
+        - type: analyze_requirements
+          from: context_input
+        - type: determine_applicable_domains
+          from_param: substage_domains
+        - type: create_substage_plan
+        - type: memory.write
+          key: substage_plan
+      transitions:
+        on_success: execute_substages
+
+    execute_substages:
+      description: "Execute each design substage"
+      parallel_if_independent: true
+      sequential_if_dependent: true
+
+      for_each_substage:
+        actions:
+          - type: spawn_substage
+            domain: current_domain
+            specialists: domain_relevant_members
+          - type: produce_deliverable
+            type: from_domain_config
+          - type: memory.write
+            key: substage_{domain}_complete
+
+      transitions:
+        on_all_complete: integrate_substages
+
+    integrate_substages:
+      agent: board_chair
+      description: "Integrate all substage outputs"
+      actions:
+        - type: memory.read
+          scope: all_substages
+        - type: ensure_consistency
+          across: all_outputs
+        - type: resolve_conflicts
+          if_any: true
+        - type: create_integrated_output
+        - type: memory.write
+          key: integration_complete
+      transitions:
+        on_success: finalize_output
+
+    # FINALIZE
+
+    finalize_output:
+      agent: writer
+      description: "Create final output document"
+      actions:
+        - type: memory.read
+          scope: evaluation_results
+        - type: create_document
+          format_from_param: output_type
+        - type: filesystem.write
+          path_from_param: output_path
+        - type: memory.write
+          key: output_complete
+      transitions:
+        on_success: evaluation_complete
+
+    # EXIT STATES
+
+    evaluation_complete:
+      final: true
+      outputs:
+        - document_from_param: output_path
+        - evaluation_log: memory://full_session
+
+    approved:
+      final: true
+      status: APPROVED
+      outputs:
+        - approval_report_from_param: output_path
+
+    not_approved:
+      final: true
+      status: NOT_APPROVED
+      outputs:
+        - rejection_report_from_param: output_path
+
+    escalated:
+      final: true
+      status: ESCALATED
+      requires: human_decision
+      outputs:
+        - escalation_report_from_param: output_path
+
+# Review dimensions for approval mode
+default_review_dimensions:
+  - id: completeness
+    weight: 0.20
+    description: "All requirements addressed"
+  - id: consistency
+    weight: 0.20
+    description: "Documents are internally consistent"
+  - id: feasibility
+    weight: 0.20
+    description: "Technically achievable"
+  - id: quality
+    weight: 0.20
+    description: "Meets quality standards"
+  - id: alignment
+    weight: 0.20
+    description: "Aligns with architecture and vision"

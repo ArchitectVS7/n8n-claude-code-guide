@@ -1,0 +1,323 @@
+name: dialectic
+description: >
+  Two-agent creative conversation template. Two opposing mindsets engage in
+  structured dialogue to explore possibilities and ground them in reality.
+  A synthesizer captures the outcome when exit conditions are met.
+
+version: 1.0.0
+template_type: conversation
+
+# Template Parameters - Must be provided when invoking
+parameters:
+  required:
+    - name: agent_a
+      type: agent_config
+      description: "First dialectic agent (e.g., expansive thinker)"
+    - name: agent_b
+      type: agent_config
+      description: "Second dialectic agent (e.g., practical thinker)"
+    - name: context_input
+      type: file_reference
+      description: "Input document to seed the conversation"
+    - name: output_path
+      type: path_template
+      description: "Where to write the synthesized output"
+
+  optional:
+    - name: synthesizer
+      type: agent_config
+      default: default_synthesizer
+      description: "Agent that produces final output"
+    - name: exit_condition
+      type: enum
+      options: [rounds, consensus, aha_moment, facilitator_call]
+      default: aha_moment
+      description: "When to end the dialectic"
+    - name: max_rounds
+      type: integer
+      default: 8
+      description: "Maximum conversation rounds"
+    - name: min_rounds
+      type: integer
+      default: 4
+      description: "Minimum rounds before exit allowed"
+    - name: output_format
+      type: enum
+      options: [vision, recommendation, decision, synthesis]
+      default: vision
+      description: "Format of the output document"
+    - name: parallel_research
+      type: boolean
+      default: false
+      description: "Enable parallel web research during conversation"
+
+memory:
+  backend: agentdb
+  namespace_template: "dialectic/{session_id}"
+
+# Agent slots - filled by parameters
+agents:
+
+  - id: agent_a
+    role: dialectic_participant
+    from_param: agent_a
+    tools: [memory.read, memory.write]
+    config:
+      interaction_style: expansive
+      listens_to: [agent_b, facilitator]
+      speaks_to: [agent_b]
+
+  - id: agent_b
+    role: dialectic_participant
+    from_param: agent_b
+    tools: [memory.read, memory.write]
+    config:
+      interaction_style: grounding
+      listens_to: [agent_a, facilitator]
+      speaks_to: [agent_a]
+
+  - id: facilitator
+    role: conversation_manager
+    persona_file: .thursian/personas/facilitation/dialectic-facilitator.md
+    tools: [memory.read, memory.write]
+    config:
+      monitors: [conversation_flow, exit_conditions]
+      can_intervene: true
+
+  - id: researcher
+    role: background_researcher
+    enabled_by: parallel_research
+    persona_file: .thursian/personas/research/web-researcher.md
+    tools: [memory.read, memory.write, web.search, web.fetch]
+    config:
+      runs_parallel: true
+      contributes_to: conversation_context
+
+  - id: synthesizer
+    role: output_writer
+    from_param: synthesizer
+    default_persona: .thursian/personas/ideation/synthesizer.md
+    tools: [memory.read, filesystem.write]
+    output_contract:
+      - type: document
+        format_from_param: output_format
+        path_from_param: output_path
+
+workflow:
+
+  entry_state: initialize
+  exit_states: [synthesis_complete]
+
+  states:
+
+    initialize:
+      agent: facilitator
+      description: "Load context and prepare for dialectic"
+      actions:
+        - type: filesystem.read
+          path_from_param: context_input
+        - type: initialize_session
+          set:
+            - current_round: 0
+            - max_rounds_from_param: max_rounds
+            - min_rounds_from_param: min_rounds
+            - exit_condition_from_param: exit_condition
+        - type: memory.write
+          key: session_context
+        - type: start_researcher_if_enabled
+          condition: parallel_research
+      transitions:
+        on_success: open_dialectic
+
+    open_dialectic:
+      agent: facilitator
+      description: "Frame the conversation and invite first exchange"
+      actions:
+        - type: frame_conversation
+          include:
+            - context_summary
+            - participant_roles
+            - conversation_goal
+            - ground_rules
+        - type: invite_opening
+          from: agent_a
+        - type: memory.write
+          key: conversation_opened
+      transitions:
+        on_complete: dialectic_round
+
+    dialectic_round:
+      description: "One round of dialectic exchange"
+      sequential_agents: [agent_a, agent_b]
+
+      agent_a:
+        actions:
+          - type: memory.read
+            scope: conversation_history
+          - type: read_research_if_available
+            from: researcher
+          - type: contribute
+            style: from_agent_config
+            responds_to: previous_contribution
+            builds_on: context
+          - type: memory.write
+            key: contribution_a_round_{round}
+
+      agent_b:
+        actions:
+          - type: memory.read
+            scope: conversation_history
+          - type: read_research_if_available
+            from: researcher
+          - type: respond
+            style: from_agent_config
+            grounds: agent_a_contribution
+            advances: conversation_goal
+          - type: memory.write
+            key: contribution_b_round_{round}
+
+      transitions:
+        on_complete: evaluate_round
+
+    evaluate_round:
+      agent: facilitator
+      description: "Evaluate if exit conditions are met"
+      actions:
+        - type: increment_round
+        - type: memory.read
+          scope: all_contributions
+        - type: evaluate_exit_condition
+          conditions:
+            rounds:
+              check: current_round >= max_rounds
+            consensus:
+              check: agents_agree_on_direction
+            aha_moment:
+              check: breakthrough_detected
+            facilitator_call:
+              check: facilitator_determines_complete
+        - type: check_minimum_rounds
+          required: min_rounds
+        - type: memory.write
+          key: round_{round}_evaluation
+      transitions:
+        if_exit_condition_met: prepare_synthesis
+        if_continue: dialectic_round
+        if_max_rounds_exceeded: prepare_synthesis
+
+    prepare_synthesis:
+      agent: facilitator
+      description: "Prepare conversation for synthesis"
+      actions:
+        - type: memory.read
+          scope: full_conversation
+        - type: stop_researcher
+          if_enabled: parallel_research
+        - type: create_synthesis_brief
+          include:
+            - key_themes
+            - areas_of_agreement
+            - creative_breakthroughs
+            - practical_groundings
+            - research_findings_if_any
+        - type: memory.write
+          key: synthesis_brief
+      transitions:
+        on_complete: synthesize_output
+
+    synthesize_output:
+      agent: synthesizer
+      description: "Create final output document"
+      actions:
+        - type: memory.read
+          key: synthesis_brief
+        - type: memory.read
+          scope: full_conversation
+        - type: create_output
+          format_from_param: output_format
+          templates:
+            vision:
+              sections: [executive_summary, vision_statement, key_themes, next_steps]
+            recommendation:
+              sections: [summary, recommendation, rationale, alternatives]
+            decision:
+              sections: [decision, context, implications, action_items]
+            synthesis:
+              sections: [overview, key_insights, tensions_resolved, open_questions]
+        - type: filesystem.write
+          path_from_param: output_path
+        - type: memory.write
+          key: output_complete
+      transitions:
+        on_success: synthesis_complete
+
+    synthesis_complete:
+      description: "Dialectic complete"
+      final: true
+      outputs:
+        - document_from_param: output_path
+        - conversation_transcript: memory://conversation_history
+      handoff:
+        artifacts:
+          - output_document
+          - conversation_log
+        context:
+          rounds_completed: current_round
+          exit_reason: exit_condition_met
+
+# Output format templates
+output_templates:
+
+  vision:
+    title: "Vision Document"
+    sections:
+      - name: executive_summary
+        description: "1-2 paragraph summary of the vision"
+      - name: vision_statement
+        description: "Clear, inspiring vision statement"
+      - name: key_themes
+        description: "Major themes that emerged"
+      - name: opportunities
+        description: "Possibilities identified"
+      - name: constraints
+        description: "Practical considerations"
+      - name: next_steps
+        description: "Recommended next actions"
+
+  recommendation:
+    title: "Recommendation Document"
+    sections:
+      - name: summary
+        description: "Brief summary of recommendation"
+      - name: recommendation
+        description: "The recommended course of action"
+      - name: rationale
+        description: "Why this recommendation"
+      - name: alternatives_considered
+        description: "Other options evaluated"
+      - name: risks
+        description: "Potential risks and mitigations"
+
+  decision:
+    title: "Decision Document"
+    sections:
+      - name: decision
+        description: "The decision made"
+      - name: context
+        description: "Background and constraints"
+      - name: implications
+        description: "What this decision means"
+      - name: action_items
+        description: "Next steps to implement"
+
+  synthesis:
+    title: "Synthesis Document"
+    sections:
+      - name: overview
+        description: "Summary of the exploration"
+      - name: key_insights
+        description: "Major insights discovered"
+      - name: tensions_resolved
+        description: "How opposing views were reconciled"
+      - name: open_questions
+        description: "Questions for further exploration"

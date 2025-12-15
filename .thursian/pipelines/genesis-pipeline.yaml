@@ -1,0 +1,676 @@
+name: genesis-pipeline
+description: >
+  GENESIS Protocol: From Ideation to Production
+  A complete product development pipeline using parameterized workflow templates.
+  Each phase invokes a template with specific agents, context, and outputs.
+
+version: 2.0.0
+
+# Pipeline configuration
+config:
+  project_path_template: ".thursian/projects/{project-name}"
+  session_namespace: "genesis/{project-name}"
+  checkpoint_on_phase_complete: true
+  allow_phase_skip: false
+  allow_phase_restart: true
+
+# Persona pools - reusable agent definitions
+persona_pools:
+
+  ideation_team:
+    dreamer:
+      persona: .thursian/personas/ideation/dreamer.md
+      role: expansive_thinker
+    doer:
+      persona: .thursian/personas/ideation/doer.md
+      role: practical_thinker
+    synthesizer:
+      persona: .thursian/personas/ideation/synthesizer.md
+      role: output_writer
+
+  user_personas:
+    # Dynamically configured based on project domain
+    pool_size: 5
+    persona_template: .thursian/personas/focus-group/user-persona-template.md
+    configured_by: domain_analysis
+
+  engineering_core:
+    engineering_manager:
+      persona: .thursian/personas/stakeholder/engineering-manager.md
+    technical_lead:
+      persona: .thursian/personas/ideation/doer.md
+    product_manager:
+      persona: .thursian/personas/engineering/product-manager.md
+    qa_lead:
+      persona: .thursian/personas/engineering/qa-lead.md
+    ux_lead:
+      persona: .thursian/personas/engineering/ux-lead.md
+
+  architecture_team:
+    chief_architect:
+      persona: .thursian/personas/architecture/chief-architect.md
+    platform_architect:
+      persona: .thursian/personas/architecture/platform-architect.md
+    backend_architect:
+      persona: .thursian/personas/architecture/backend-architect.md
+    frontend_architect:
+      persona: .thursian/personas/architecture/frontend-architect.md
+    data_architect:
+      persona: .thursian/personas/architecture/data-architect.md
+    security_architect:
+      persona: .thursian/personas/architecture/security-architect.md
+    devops_architect:
+      persona: .thursian/personas/architecture/devops-architect.md
+
+  development_team:
+    senior_developer:
+      persona: .thursian/personas/development/senior-developer.md
+    backend_developer:
+      persona: .thursian/personas/development/backend-developer.md
+    frontend_developer:
+      persona: .thursian/personas/development/frontend-developer.md
+    code_reviewer:
+      persona: .thursian/personas/development/code-reviewer.md
+
+  testing_team:
+    test_lead:
+      persona: .thursian/personas/testing/test-lead.md
+    e2e_tester:
+      persona: .thursian/personas/testing/e2e-tester.md
+    integration_tester:
+      persona: .thursian/personas/testing/integration-tester.md
+
+  facilitation:
+    facilitator:
+      persona: .thursian/personas/facilitation/facilitator.md
+    researcher:
+      persona: .thursian/personas/research/web-researcher.md
+
+# The Pipeline Phases
+phases:
+
+  # ============================================================
+  # PHASE 1: VISION CRYSTALLIZATION
+  # ============================================================
+
+  - id: phase_1_ideation
+    name: "Vision Crystallization"
+    description: "Dreamer and Doer explore idea until breakthrough"
+    template: dialectic
+    parameters:
+      agent_a:
+        from_pool: ideation_team.dreamer
+      agent_b:
+        from_pool: ideation_team.doer
+      synthesizer:
+        from_pool: ideation_team.synthesizer
+      context_input: "{project_path}/ideas/initial-idea.md"
+      output_path: "{project_path}/visions/vision-v1.md"
+      exit_condition: aha_moment
+      max_rounds: 8
+      min_rounds: 4
+      output_format: vision
+      parallel_research: false
+    outputs:
+      - vision_document: "{project_path}/visions/vision-v1.md"
+    next_phase: phase_2_focus_group
+
+  # ============================================================
+  # PHASE 2: MARKET VALIDATION
+  # ============================================================
+
+  - id: phase_2_focus_group
+    name: "User Focus Group"
+    description: "Domain-specific personas validate the vision"
+    template: roundtable
+    parameters:
+      facilitator:
+        from_pool: facilitation.facilitator
+      participants:
+        from_pool: user_personas
+        count: 5
+      researcher:
+        from_pool: facilitation.researcher
+      context_input:
+        - "{project_path}/visions/vision-v1.md"
+      output_path: "{project_path}/focus-groups/report.md"
+      discussion_topic: "Vision validation from user perspective"
+      round_count: 5
+      round_structure: guided
+      parallel_research: true
+      output_type: feedback_report
+      triage_output: true
+      triage_categories: [love_it, like_it, concerned, dealbreaker, suggestion]
+    outputs:
+      - focus_group_report: "{project_path}/focus-groups/report.md"
+      - transcript: "{project_path}/focus-groups/conversations/full-transcript.md"
+    next_phase: phase_3_engineering_meeting
+
+  # ============================================================
+  # PHASE 3: INITIAL DESIGN (PRD CREATION)
+  # ============================================================
+
+  - id: phase_3_engineering_meeting
+    name: "Engineering Roundtable"
+    description: "Engineering team creates PRD from validated vision"
+    template: engineering_board
+    parameters:
+      board_chair:
+        from_pool: engineering_core.engineering_manager
+      board_members:
+        - from_pool: engineering_core.technical_lead
+        - from_pool: engineering_core.product_manager
+        - from_pool: engineering_core.qa_lead
+        - from_pool: engineering_core.ux_lead
+      researcher:
+        from_pool: facilitation.researcher
+      writer:
+        from_pool: ideation_team.synthesizer
+      context_input:
+        - "{project_path}/focus-groups/report.md"
+        - "{project_path}/visions/vision-v1.md"
+      output_path: "{project_path}/prds/prd-v1.md"
+      evaluation_type: create
+      output_type: prd
+      parallel_research: true
+    outputs:
+      - prd_document: "{project_path}/prds/prd-v1.md"
+      - technical_research: "{project_path}/prds/technical-research.md"
+    next_phase: phase_4_stakeholder_review
+
+  # ============================================================
+  # PHASE 4: VISION ALIGNMENT (PRD REVIEW)
+  # ============================================================
+
+  - id: phase_4_stakeholder_review
+    name: "Stakeholder Review"
+    description: "Original ideation team and focus group review PRD"
+    template: roundtable
+    parameters:
+      facilitator:
+        from_pool: engineering_core.engineering_manager
+      participants:
+        - from_pool: ideation_team.dreamer
+        - from_pool: ideation_team.doer
+        - from_pool: user_personas  # Same 5 personas from phase 2
+      context_input:
+        - "{project_path}/prds/prd-v1.md"
+      output_path: "{project_path}/prds/stakeholder-feedback.md"
+      discussion_topic: "PRD section-by-section review"
+      round_count: 5
+      round_structure: section_by_section
+      output_type: validation_report
+      triage_output: true
+      triage_categories: [critical, high, medium, low, out_of_scope]
+    outputs:
+      - stakeholder_feedback: "{project_path}/prds/stakeholder-feedback.md"
+      - approved_prd: "{project_path}/prds/prd-approved.md"
+    next_phase: phase_5_engineering_review
+
+  # ============================================================
+  # PHASE 5: DESIGN REFINEMENT (TRIAGE)
+  # ============================================================
+
+  - id: phase_5_engineering_review
+    name: "Engineering Review & Triage"
+    description: "Triage feedback into release phases"
+    template: engineering_board
+    parameters:
+      board_chair:
+        from_pool: engineering_core.engineering_manager
+      board_members:
+        - from_pool: engineering_core.technical_lead
+        - from_pool: engineering_core.product_manager
+        - from_pool: engineering_core.qa_lead
+        - from_pool: engineering_core.ux_lead
+      writer:
+        from_pool: ideation_team.synthesizer
+      context_input:
+        - "{project_path}/prds/prd-approved.md"
+        - "{project_path}/prds/stakeholder-feedback.md"
+      output_path: "{project_path}/design-docs/PRD-v0.2.md"
+      evaluation_type: triage
+      output_type: triage_report
+      triage_categories:
+        - mvp_critical
+        - alpha_release
+        - beta_release
+        - post_launch
+        - out_of_scope
+    outputs:
+      - triage_report: "{project_path}/prds/triage-report.md"
+      - refined_prd: "{project_path}/design-docs/PRD-v0.2.md"
+    next_phase: phase_6_architecture
+
+  # ============================================================
+  # PHASE 6: TECHNICAL ARCHITECTURE
+  # ============================================================
+
+  - id: phase_6_architecture
+    name: "Architecture Planning"
+    description: "Create architecture with dynamic domain substages"
+    template: engineering_board
+    parameters:
+      board_chair:
+        from_pool: architecture_team.chief_architect
+      board_members:
+        - from_pool: architecture_team.platform_architect
+        - from_pool: architecture_team.backend_architect
+        - from_pool: architecture_team.frontend_architect
+        - from_pool: architecture_team.data_architect
+        - from_pool: architecture_team.security_architect
+        - from_pool: architecture_team.devops_architect
+      researcher:
+        from_pool: facilitation.researcher
+      writer:
+        from_pool: ideation_team.synthesizer
+      context_input:
+        - "{project_path}/design-docs/PRD-v0.2.md"
+        - "{project_path}/prds/triage-report.md"
+      output_path: "{project_path}/design-docs/architecture-overview.md"
+      evaluation_type: design
+      output_type: architecture
+      parallel_research: true
+      spawn_substages: true
+      substage_domains:
+        required:
+          - platform_deployment
+          - system_structure
+          - communication_patterns
+          - data_architecture
+          - authentication_security
+          - tech_stack
+        optional:
+          - frontend_architecture
+          - mobile_architecture
+          - api_design
+          - scalability_performance
+          - observability
+    outputs:
+      - architecture_overview: "{project_path}/design-docs/architecture-overview.md"
+      - adrs: "{project_path}/design-docs/adrs/"
+    next_phase: phase_7a_epic_scheduling
+
+  # ============================================================
+  # PHASE 7A: PROJECT PLANNING - EPICS
+  # ============================================================
+
+  - id: phase_7a_epic_scheduling
+    name: "Epic Scheduling"
+    description: "Break down architecture into epics and story slugs"
+    template: planning_session
+    parameters:
+      lead_planner:
+        persona: .thursian/personas/planning/project-manager.md
+      domain_experts:
+        - from_pool: engineering_core.engineering_manager
+        - from_pool: engineering_core.technical_lead
+        - from_pool: engineering_core.product_manager
+      writer:
+        persona: .thursian/personas/planning/project-manager.md
+      context_input:
+        - "{project_path}/design-docs/architecture-overview.md"
+        - "{project_path}/design-docs/PRD-v0.2.md"
+      output_path: "{project_path}/planning/"
+      planning_level: epic
+      iteration_stages: 1
+      traceability_required: true
+      traceability_source: "{project_path}/design-docs/PRD-v0.2.md"
+      output_type: epics
+      include_dependencies: true
+      include_resources: true
+      include_milestones: true
+    outputs:
+      - epics_and_stories: "{project_path}/planning/epics-and-stories.md"
+      - traceability_matrix: "{project_path}/planning/traceability-matrix.md"
+      - milestone_plan: "{project_path}/planning/milestone-plan.md"
+      - resource_requirements: "{project_path}/planning/resource-requirements.md"
+    next_phase: phase_7b_story_expansion
+
+  # ============================================================
+  # PHASE 7B: PROJECT PLANNING - STORIES
+  # ============================================================
+
+  - id: phase_7b_story_expansion
+    name: "Story Expansion"
+    description: "Expand stories through 5 iteration stages"
+    template: planning_session
+    parameters:
+      lead_planner:
+        persona: .thursian/personas/planning/project-manager.md
+      domain_experts:
+        - from_pool: engineering_core.technical_lead
+        - from_pool: development_team.senior_developer
+        - from_pool: development_team.backend_developer
+        - from_pool: development_team.frontend_developer
+        - from_pool: architecture_team.devops_architect
+        - from_pool: engineering_core.qa_lead
+      writer:
+        persona: .thursian/personas/planning/project-manager.md
+      context_input:
+        - "{project_path}/planning/epics-and-stories.md"
+        - "{project_path}/planning/traceability-matrix.md"
+        - "{project_path}/design-docs/architecture-overview.md"
+      output_path: "{project_path}/planning/"
+      planning_level: story
+      iteration_stages: 5
+      stage_definitions:
+        - stage: 1
+          name: "Initial Expansion"
+          focus: [description, acceptance_criteria]
+        - stage: 2
+          name: "Technical Deep Dive"
+          focus: [approach, files, patterns, complexity]
+        - stage: 3
+          name: "Dependency & Blocker Analysis"
+          focus: [dependencies, blockers, mitigations]
+        - stage: 4
+          name: "Quality & Testing Strategy"
+          focus: [testing_approach, acceptance_tests, quality_gates]
+        - stage: 5
+          name: "Recipe Finalization"
+          focus: [step_by_step, checkpoints, validation]
+      traceability_required: true
+      output_type: recipes
+      include_dependencies: true
+    outputs:
+      - detailed_stories: "{project_path}/planning/detailed-stories/"
+      - dependency_map: "{project_path}/planning/dependency-map.md"
+      - implementation_guide: "{project_path}/planning/implementation-guide.md"
+    next_phase: phase_8_approval_gate
+
+  # ============================================================
+  # PHASE 8: BUILD APPROVAL GATE
+  # ============================================================
+
+  - id: phase_8_approval_gate
+    name: "Build Approval Gate"
+    description: "Full engineering board consensus review"
+    template: engineering_board
+    parameters:
+      board_chair:
+        persona: .thursian/personas/planning/project-manager.md
+      board_members:
+        - from_pool: engineering_core.engineering_manager
+        - from_pool: engineering_core.technical_lead
+        - from_pool: engineering_core.product_manager
+        - from_pool: engineering_core.qa_lead
+        - from_pool: architecture_team.backend_architect
+        - from_pool: architecture_team.frontend_architect
+        - from_pool: architecture_team.security_architect
+        - from_pool: architecture_team.devops_architect
+      writer:
+        from_pool: ideation_team.synthesizer
+      context_input:
+        - "{project_path}/planning/implementation-guide.md"
+        - "{project_path}/planning/detailed-stories/"
+        - "{project_path}/planning/dependency-map.md"
+        - "{project_path}/design-docs/architecture-overview.md"
+        - "{project_path}/design-docs/PRD-v0.2.md"
+        - "{project_path}/visions/vision-v1.md"
+      output_path: "{project_path}/approval/approval-report.md"
+      evaluation_type: approve
+      output_type: approval_report
+      approval_threshold: 0.95
+      max_iterations: 3
+      review_dimensions:
+        - id: upstream_traceability
+          weight: 0.20
+        - id: downstream_completeness
+          weight: 0.15
+        - id: task_atomicity
+          weight: 0.15
+        - id: quality_gates
+          weight: 0.15
+        - id: expertise_assignment
+          weight: 0.15
+        - id: dependency_clarity
+          weight: 0.10
+        - id: document_consistency
+          weight: 0.10
+    outputs:
+      - approval_report: "{project_path}/approval/approval-report.md"
+    decision:
+      if_approved: phase_9_build
+      if_escalated: human_decision
+
+  # ============================================================
+  # PHASE 9: PROTOTYPE BUILD
+  # ============================================================
+
+  - id: phase_9_build
+    name: "Prototype Build"
+    description: "Implement all tasks with review and testing"
+    template: build_cycle
+    parameters:
+      orchestrator:
+        persona: .thursian/personas/planning/project-manager.md
+      developers:
+        - from_pool: development_team.senior_developer
+        - from_pool: development_team.backend_developer
+        - from_pool: development_team.frontend_developer
+      reviewers:
+        - from_pool: development_team.code_reviewer
+        - from_pool: architecture_team.security_architect
+      testers:
+        - from_pool: testing_team.test_lead
+        - from_pool: testing_team.e2e_tester
+        - from_pool: testing_team.integration_tester
+      spec_validator:
+        from_pool: engineering_core.qa_lead
+      evidence_collector:
+        from_pool: ideation_team.synthesizer
+      task_queue: "{project_path}/planning/implementation-guide.md"
+      architecture_docs:
+        - "{project_path}/design-docs/architecture-overview.md"
+        - "{project_path}/design-docs/adrs/"
+      output_path: "{project_path}/build/"
+      evidence_path: "{project_path}/testing/"
+      build_mode: initial
+      scope: full
+      test_automation: full
+      automation_framework: playwright
+      evidence_capture: true
+      max_review_iterations: 3
+      coverage_threshold: 0.80
+    outputs:
+      - build_summary: "{project_path}/build/build-summary.md"
+      - test_report: "{project_path}/testing/test-report.md"
+      - screenshots: "{project_path}/testing/screenshots/"
+      - videos: "{project_path}/testing/videos/"
+      - working_prototype: "{project_path}/prototype/"
+    next_phase: phase_10_alpha
+
+  # ============================================================
+  # PHASE 10: ALPHA TESTING
+  # ============================================================
+
+  - id: phase_10_alpha
+    name: "Closed Alpha Test"
+    description: "All stakeholders test the prototype"
+    template: roundtable
+    parameters:
+      facilitator:
+        from_pool: engineering_core.engineering_manager
+      participants:
+        - from_pool: ideation_team.dreamer
+        - from_pool: ideation_team.doer
+        - from_pool: user_personas  # Original 5 personas
+        - from_pool: engineering_core.technical_lead
+        - from_pool: engineering_core.product_manager
+        - from_pool: engineering_core.qa_lead
+      context_input:
+        - "{project_path}/build/build-summary.md"
+        - "{project_path}/testing/test-report.md"
+      evidence_input: "{project_path}/testing/screenshots/"
+      output_path: "{project_path}/alpha/alpha-report.md"
+      discussion_topic: "Prototype testing and feedback"
+      round_count: 5
+      round_structure: guided
+      output_type: test_report
+      capture_evidence: true
+      triage_output: true
+      triage_categories:
+        - critical_must_fix
+        - high_should_fix
+        - medium_backlog
+        - low_nice_to_have
+        - out_of_scope
+    outputs:
+      - alpha_report: "{project_path}/alpha/alpha-report.md"
+      - feedback_triage: "{project_path}/alpha/feedback-triage.md"
+    decision:
+      if_critical_issues: phase_9_alpha_fix
+      if_approved: phase_11_beta
+
+  # ============================================================
+  # PHASE 9 (ALPHA FIX): Fix Cycle
+  # ============================================================
+
+  - id: phase_9_alpha_fix
+    name: "Alpha Fix Cycle"
+    description: "Fix critical issues from alpha testing"
+    template: build_cycle
+    parameters:
+      orchestrator:
+        persona: .thursian/personas/planning/project-manager.md
+      developers:
+        from_pool: development_team
+      reviewers:
+        from_pool: development_team.code_reviewer
+      testers:
+        from_pool: testing_team
+      task_queue: "{project_path}/alpha/feedback-triage.md"
+      output_path: "{project_path}/build/"
+      build_mode: fix
+      scope: targeted
+      target_items: [critical_must_fix, high_should_fix]
+      test_automation: full
+      evidence_capture: true
+    outputs:
+      - fix_summary: "{project_path}/build/alpha-fix-summary.md"
+    next_phase: phase_10_alpha  # Loop back to alpha test
+
+  # ============================================================
+  # PHASE 11: BETA TESTING
+  # ============================================================
+
+  - id: phase_11_beta
+    name: "Open Beta Test"
+    description: "Expanded testing with varied demographics"
+    template: roundtable
+    parameters:
+      facilitator:
+        from_pool: engineering_core.engineering_manager
+      participants:
+        from_pool: beta_personas  # Expanded: 15 personas with demographic variation
+        count: 15
+      context_input:
+        - "{project_path}/alpha/alpha-report.md"
+        - "{project_path}/build/build-summary.md"
+      evidence_input: "{project_path}/testing/screenshots/"
+      output_path: "{project_path}/beta/beta-report.md"
+      discussion_topic: "Extended prototype testing"
+      round_count: 5
+      output_type: test_report
+      capture_evidence: true
+      triage_output: true
+      triage_categories:
+        - critical_blocker
+        - should_fix_pre_launch
+        - backlog
+        - nice_to_have
+        - out_of_scope
+    outputs:
+      - beta_report: "{project_path}/beta/beta-report.md"
+    decision:
+      if_critical_issues: phase_9_beta_fix
+      if_approved: phase_12_release
+
+  # ============================================================
+  # PHASE 9 (BETA FIX): Fix Cycle
+  # ============================================================
+
+  - id: phase_9_beta_fix
+    name: "Beta Fix Cycle"
+    description: "Fix issues from beta testing"
+    template: build_cycle
+    parameters:
+      orchestrator:
+        persona: .thursian/personas/planning/project-manager.md
+      developers:
+        from_pool: development_team
+      reviewers:
+        from_pool: development_team.code_reviewer
+      testers:
+        from_pool: testing_team
+      task_queue: "{project_path}/beta/beta-report.md"
+      output_path: "{project_path}/build/"
+      build_mode: fix
+      scope: targeted
+      target_items: [critical_blocker, should_fix_pre_launch]
+    outputs:
+      - fix_summary: "{project_path}/build/beta-fix-summary.md"
+    next_phase: phase_11_beta  # Loop back to beta test
+
+  # ============================================================
+  # PHASE 12: RELEASE
+  # ============================================================
+
+  - id: phase_12_release
+    name: "Production Release"
+    description: "Final validation and deployment"
+    template: engineering_board
+    parameters:
+      board_chair:
+        from_pool: engineering_core.engineering_manager
+      board_members:
+        - from_pool: engineering_core.technical_lead
+        - from_pool: engineering_core.product_manager
+        - from_pool: engineering_core.qa_lead
+        - from_pool: architecture_team.devops_architect
+      context_input:
+        - "{project_path}/beta/beta-report.md"
+        - "{project_path}/build/build-summary.md"
+      output_path: "{project_path}/release/release-report.md"
+      evaluation_type: approve
+      output_type: approval_report
+      approval_threshold: 1.0  # Unanimous
+    outputs:
+      - release_report: "{project_path}/release/release-report.md"
+      - production_artifact: "{project_path}/release/production/"
+
+# Execution modes - pre-configured pipeline variants
+execution_modes:
+
+  - id: full_genesis
+    name: "Complete GENESIS Pipeline"
+    description: "From idea to production release"
+    phases: [1, 2, 3, 4, 5, 6, 7a, 7b, 8, 9, 10, 11, 12]
+
+  - id: idea_to_approved
+    name: "Idea → Build Approved"
+    description: "Planning only, no implementation"
+    phases: [1, 2, 3, 4, 5, 6, 7a, 7b, 8]
+
+  - id: idea_to_prototype
+    name: "Idea → Working Prototype"
+    description: "Through first build, no formal testing"
+    phases: [1, 2, 3, 4, 5, 6, 7a, 7b, 8, 9]
+
+  - id: idea_to_alpha
+    name: "Idea → Alpha Tested"
+    description: "Through alpha testing"
+    phases: [1, 2, 3, 4, 5, 6, 7a, 7b, 8, 9, 10]
+
+  - id: build_and_test
+    name: "Build → Test (Approved Plan Required)"
+    description: "Implementation and testing only"
+    phases: [9, 10, 11, 12]
+    requires: approved_plan
+
+  - id: testing_only
+    name: "Alpha + Beta Testing"
+    description: "Testing cycles only"
+    phases: [10, 11]
+    requires: working_prototype

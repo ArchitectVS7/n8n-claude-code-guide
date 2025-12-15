@@ -1,0 +1,402 @@
+name: planning_session
+description: >
+  Structured planning template. A lead planner works with domain experts to
+  break down work into actionable items through iterative refinement stages.
+  Used for epic scheduling, story expansion, and task breakdown.
+
+version: 1.0.0
+template_type: planning
+
+# Template Parameters
+parameters:
+  required:
+    - name: lead_planner
+      type: agent_config
+      description: "Agent who leads the planning session"
+    - name: domain_experts
+      type: agent_config_list
+      description: "Domain experts who contribute to planning"
+    - name: context_input
+      type: file_reference_list
+      description: "Input documents (architecture, PRD, etc.)"
+    - name: output_path
+      type: path_template
+      description: "Where to write planning outputs"
+
+  optional:
+    - name: planning_level
+      type: enum
+      options: [epic, story, task]
+      default: story
+      description: "Level of granularity"
+    - name: iteration_stages
+      type: integer
+      default: 1
+      description: "Number of refinement stages"
+    - name: stage_definitions
+      type: stage_list
+      description: "Custom stage definitions"
+    - name: traceability_required
+      type: boolean
+      default: true
+      description: "Require traceability to source requirements"
+    - name: traceability_source
+      type: file_reference
+      description: "Document to trace requirements to"
+    - name: output_type
+      type: enum
+      options: [epics, stories, tasks, recipes, schedule]
+      default: stories
+      description: "Type of planning output"
+    - name: writer
+      type: agent_config
+      default: default_writer
+      description: "Agent who produces final documents"
+    - name: include_dependencies
+      type: boolean
+      default: true
+      description: "Map dependencies between items"
+    - name: include_resources
+      type: boolean
+      default: true
+      description: "Identify resource requirements"
+    - name: include_milestones
+      type: boolean
+      default: false
+      description: "Define milestones"
+
+# Default iteration stages for story-level planning
+default_stages:
+  - stage: 1
+    name: "Initial Expansion"
+    focus: [description, acceptance_criteria]
+    output: initial_spec
+  - stage: 2
+    name: "Technical Deep Dive"
+    focus: [approach, files, patterns, complexity]
+    output: technical_spec
+  - stage: 3
+    name: "Dependency & Blocker Analysis"
+    focus: [dependencies, blockers, mitigations]
+    output: dependency_map
+  - stage: 4
+    name: "Quality & Testing Strategy"
+    focus: [testing_approach, acceptance_tests, quality_gates]
+    output: quality_spec
+  - stage: 5
+    name: "Recipe Finalization"
+    focus: [step_by_step, checkpoints, validation]
+    output: implementation_recipe
+
+memory:
+  backend: agentdb
+  namespace_template: "planning/{session_id}"
+
+agents:
+
+  - id: lead_planner
+    role: planning_facilitator
+    from_param: lead_planner
+    tools: [memory.read, memory.write]
+    config:
+      manages: [planning_flow, item_breakdown, stage_progression]
+      ensures: [completeness, traceability, actionability]
+
+  - id: domain_experts
+    role: domain_contributors
+    from_param: domain_experts
+    count: dynamic
+    tools: [memory.read, memory.write]
+    config:
+      provides: [domain_expertise, technical_guidance, complexity_assessment]
+      validates: [feasibility, approach, estimates]
+
+  - id: writer
+    role: planning_documentarian
+    from_param: writer
+    default_persona: .thursian/personas/planning/project-manager.md
+    tools: [memory.read, filesystem.write]
+    output_contract:
+      - type: planning_docs
+        format_from_param: output_type
+        path_from_param: output_path
+
+workflow:
+
+  entry_state: initialize
+  exit_states: [planning_complete]
+
+  states:
+
+    initialize:
+      agent: lead_planner
+      description: "Load context and prepare planning session"
+      actions:
+        - type: filesystem.read
+          paths_from_param: context_input
+        - type: initialize_session
+          set:
+            - planning_level_from_param: planning_level
+            - total_stages_from_param: iteration_stages
+            - current_stage: 1
+            - stages_from_param_or_default: stage_definitions
+        - type: extract_items_to_plan
+          based_on: planning_level
+        - type: load_traceability_source
+          if_enabled: traceability_required
+        - type: memory.write
+          key: session_initialized
+      transitions:
+        on_success: open_session
+
+    open_session:
+      agent: lead_planner
+      description: "Open planning session and present scope"
+      actions:
+        - type: present_scope
+          include:
+            - items_to_plan: count and overview
+            - planning_level: level
+            - stages: stage_overview
+            - traceability: requirements if enabled
+        - type: introduce_experts
+          from: domain_experts
+        - type: memory.write
+          key: session_opened
+      transitions:
+        on_success: initial_breakdown
+
+    initial_breakdown:
+      agent: lead_planner
+      description: "Create initial breakdown of work items"
+      actions:
+        - type: memory.read
+          scope: items_to_plan
+        - type: create_initial_breakdown
+          level: planning_level
+          template:
+            epic:
+              fields: [id, name, description, phase, priority, story_slugs]
+            story:
+              fields: [id, epic, name, description, type]
+            task:
+              fields: [id, story, name, description]
+        - type: establish_traceability
+          if_enabled: traceability_required
+          link_to: traceability_source
+        - type: memory.write
+          key: initial_breakdown
+      transitions:
+        on_success: iterate_stages
+
+    iterate_stages:
+      agent: lead_planner
+      description: "Iterate through planning stages"
+      actions:
+        - type: get_current_stage
+          from: stages
+        - type: announce_stage
+          name: current_stage.name
+          focus: current_stage.focus
+        - type: memory.write
+          key: stage_{stage}_started
+      transitions:
+        on_success: stage_parallel_work
+
+    stage_parallel_work:
+      description: "Domain experts contribute to current stage"
+      parallel_agents: domain_experts
+
+      each_expert:
+        actions:
+          - type: memory.read
+            scope: [items, current_stage_focus]
+          - type: for_each_relevant_item
+            filter: matches_expertise
+            actions:
+              - type: contribute_expertise
+                focus: current_stage.focus
+              - type: enrich_item
+                with: domain_specific_details
+          - type: memory.write
+            key: expert_{id}_stage_{stage}
+
+      transitions:
+        on_all_complete: integrate_stage
+
+    integrate_stage:
+      agent: lead_planner
+      description: "Integrate expert contributions for this stage"
+      actions:
+        - type: memory.read
+          scope: stage_{stage}_contributions
+        - type: integrate_contributions
+          resolve_conflicts: true
+        - type: update_items
+          with: integrated_content
+        - type: validate_stage_output
+          against: stage.expected_output
+        - type: increment_stage
+        - type: memory.write
+          key: stage_{stage}_complete
+      transitions:
+        if_more_stages: iterate_stages
+        if_final_stage: finalize_dependencies
+
+    finalize_dependencies:
+      agent: lead_planner
+      description: "Map all dependencies and identify blockers"
+      condition: include_dependencies
+      actions:
+        - type: memory.read
+          scope: all_items
+        - type: for_each_item
+          actions:
+            - type: identify_dependencies
+              types: [blocks, blocked_by, related_to]
+            - type: identify_blockers
+              include_mitigations: true
+        - type: create_dependency_graph
+        - type: identify_critical_path
+        - type: memory.write
+          key: dependencies_mapped
+      transitions:
+        on_success: identify_resources
+
+    identify_resources:
+      agent: lead_planner
+      description: "Identify resource and expertise requirements"
+      condition: include_resources
+      parallel_input_from: domain_experts
+
+      actions:
+        - type: memory.read
+          scope: all_items
+        - type: for_each_item
+          actions:
+            - type: identify_expertise_needed
+              categories: [frontend, backend, database, devops, security, etc]
+            - type: identify_skill_level
+              levels: [expert, proficient, basic]
+        - type: aggregate_resource_needs
+          by: [phase, milestone, expertise]
+        - type: identify_gaps
+        - type: memory.write
+          key: resources_identified
+      transitions:
+        on_success: define_milestones
+
+    define_milestones:
+      agent: lead_planner
+      description: "Define milestones if enabled"
+      condition: include_milestones
+      actions:
+        - type: memory.read
+          scope: [items, dependencies, resources]
+        - type: group_items_by
+          criteria: [phase, dependency_order]
+        - type: define_milestones
+          include:
+            - milestone_id
+            - items_included
+            - success_criteria
+            - dependencies
+        - type: memory.write
+          key: milestones_defined
+      transitions:
+        on_success: create_outputs
+
+    create_outputs:
+      agent: writer
+      description: "Create final planning documents"
+      actions:
+        - type: memory.read
+          scope: all_planning_data
+        - type: create_documents
+          based_on: output_type
+          templates:
+            epics:
+              files:
+                - epics-and-stories.md
+                - traceability-matrix.md (if enabled)
+            stories:
+              files:
+                - detailed-stories/ (directory)
+                - dependency-map.md
+                - implementation-guide.md
+            tasks:
+              files:
+                - task-breakdown.md
+                - assignment-matrix.md
+            recipes:
+              files:
+                - implementation-recipes/ (directory)
+            schedule:
+              files:
+                - milestone-plan.md
+                - resource-requirements.md
+                - critical-path.md
+        - type: filesystem.write
+          path_from_param: output_path
+        - type: memory.write
+          key: outputs_created
+      transitions:
+        on_success: planning_complete
+
+    planning_complete:
+      final: true
+      outputs:
+        - documents_from_param: output_path
+        - planning_log: memory://full_session
+      handoff:
+        artifacts:
+          - planning_documents
+          - traceability_matrix
+          - dependency_map
+          - resource_requirements
+        context:
+          items_planned: count
+          stages_completed: total_stages
+          coverage: traceability_percentage
+
+# Item templates by level
+item_templates:
+
+  epic:
+    fields:
+      - id: "EPIC-{number}"
+      - name: "Brief epic name"
+      - description: "What this epic delivers"
+      - release_phase: [MVP, Alpha, Beta, Post-Launch]
+      - priority: [P0, P1, P2, P3]
+      - story_slugs: ["Brief story names"]
+      - prd_requirements: ["REQ-xxx"]
+      - dependencies: ["EPIC-xxx"]
+      - expertise_required: []
+      - estimated_effort: [S, M, L, XL]
+
+  story:
+    fields:
+      - id: "EPIC-xxx-{number}"
+      - epic: "Parent epic"
+      - name: "story-slug-format"
+      - description: "What this story implements"
+      - acceptance_criteria: ["Given/When/Then"]
+      - technical_approach: "How to implement"
+      - files_affected: []
+      - dependencies: ["story-ids"]
+      - blockers: []
+      - testing_strategy: "How to test"
+      - definition_of_done: []
+      - implementation_recipe: "Step by step"
+
+  task:
+    fields:
+      - id: "STORY-xxx-{number}"
+      - story: "Parent story"
+      - name: "Task name"
+      - description: "What to do"
+      - estimated_hours: number
+      - assigned_to: "Role or name"
+      - dependencies: ["task-ids"]
+      - done_criteria: "When is this done"

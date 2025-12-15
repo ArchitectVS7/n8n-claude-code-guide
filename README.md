@@ -35,7 +35,6 @@ All documentation is organized in the **[Orchestration-Manual/](Orchestration-Ma
 
 ### 🛠️ Ready-to-Use Files
 
-- `start-orchestration.bat` - One-click WSL startup
 - `start-docker.bat` / `stop-docker.bat` - Docker management
 - `docker-compose.yml` - Complete containerized setup
 - `workflows/` - Pre-built n8n workflow templates

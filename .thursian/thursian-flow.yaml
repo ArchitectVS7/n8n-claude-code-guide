@@ -1,0 +1,141 @@
+
+name: thursian-dev-loop
+description: >
+  Thursian orchestrated development workflow using Claude-Flow agents.
+  Implements the loop: select_task → plan_task → implement_task → adversarial_review → exec_decision → next_task.
+
+memory:
+  backend: agentdb
+  namespaces:
+    tasks: thursian-tasks
+    specs: thursian-specs
+    plans: thursian-plans
+    reviews: thursian-reviews
+    decisions: thursian-decisions
+
+task_sources:
+  - id: main-task-list
+    type: file
+    path: .thursian/tasks/tasks.json
+    format: json
+
+agents:
+
+  - id: thursian-orchestrator
+    role: orchestrator
+    persona_file: .thursian/agents/orchestrator.md
+    tools: [memory.read, memory.write, filesystem.read, filesystem.write]
+    config:
+      select_strategy: priority
+
+  - id: thursian-planner
+    role: planner
+    persona_file: .thursian/agents/planner.md
+    tools: [memory.read, memory.write, filesystem.read, filesystem.write]
+    output_contract:
+      type: plan
+      format: markdown
+      path_template: .thursian/plans/{taskId}.md
+
+  - id: thursian-dev
+    role: developer
+    persona_file: .thursian/agents/developer.md
+    tools: [filesystem.read, filesystem.write, filesystem.search, filesystem.diff, memory.read]
+
+  - id: thursian-reviewer
+    role: reviewer
+    persona_file: .thursian/agents/reviewer.md
+    tools: [filesystem.read, filesystem.diff, memory.read, filesystem.write]
+    output_contract:
+      type: review
+      format: markdown
+      path_template: .thursian/reviews/{taskId}.md
+
+  - id: thursian-exec-proxy
+    role: executive
+    persona_file: .thursian/agents/executive-proxy.md
+    tools: [memory.read, memory.write, filesystem.read, task.update-status]
+
+workflow:
+
+  entry_state: select_task
+  exit_states: [end]
+
+  states:
+
+    select_task:
+      agent: thursian-orchestrator
+      description: "Select the highest-priority pending task."
+      actions:
+        - type: "memory.search"
+          namespace: tasks
+          query: "status:pending ORDER BY priority DESC"
+        - type: "choose-task"
+      transitions:
+        on_success: plan_task
+        on_no_task_found: end
+
+    plan_task:
+      agent: thursian-planner
+      description: "Generate a detailed plan based on the task spec + PRD."
+      actions:
+        - type: filesystem.read
+          path_from_task_field: spec_path
+        - type: "write-plan"
+      transitions:
+        on_success: implement_task
+        on_failure: mark_blocked
+
+    implement_task:
+      agent: thursian-dev
+      description: "Implement the plan by modifying repo files and writing code."
+      actions:
+        - type: filesystem.read
+          path_template: .thursian/plans/{taskId}.md
+        - type: "apply-plan"
+      transitions:
+        on_success: adversarial_review
+        on_failure: mark_blocked
+
+    adversarial_review:
+      agent: thursian-reviewer
+      description: "Perform adversarial review for correctness, drift, coverage."
+      actions:
+        - type: filesystem.diff
+          scope: working-tree
+        - type: "write-review"
+      transitions:
+        on_success: exec_decision
+        on_failure: mark_blocked
+
+    exec_decision:
+      agent: thursian-exec-proxy
+      description: "Approve or request changes based on spec, plan, diff, review."
+      actions:
+        - type: memory.read
+          namespace: reviews
+          key_from: taskId
+        - type: decision
+          options: ["approve", "request_changes", "block"]
+      transitions:
+        approve: mark_done
+        request_changes: implement_task
+        block: mark_blocked
+
+    mark_done:
+      agent: thursian-orchestrator
+      actions:
+        - type: task.update-status
+          field: status
+          value: done
+      transitions:
+        on_success: select_task
+
+    mark_blocked:
+      agent: thursian-orchestrator
+      actions:
+        - type: task.update-status
+          field: status
+          value: blocked
+      transitions:
+        on_success: select_task

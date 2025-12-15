@@ -1,0 +1,397 @@
+name: roundtable
+description: >
+  Multi-persona discussion template. A facilitator guides diverse participants
+  through structured discussion rounds, with optional parallel research.
+  Used for focus groups, stakeholder reviews, alpha/beta testing feedback.
+
+version: 1.0.0
+template_type: discussion
+
+# Template Parameters
+parameters:
+  required:
+    - name: facilitator
+      type: agent_config
+      description: "Agent who guides the discussion"
+    - name: participants
+      type: agent_config_list
+      description: "List of participant agents (personas)"
+    - name: context_input
+      type: file_reference_list
+      description: "Input documents for discussion"
+    - name: output_path
+      type: path_template
+      description: "Where to write the output report"
+
+  optional:
+    - name: discussion_topic
+      type: string
+      description: "What participants are discussing/evaluating"
+    - name: round_count
+      type: integer
+      default: 5
+      description: "Number of discussion rounds"
+    - name: round_structure
+      type: enum
+      options: [open, guided, section_by_section]
+      default: guided
+      description: "How rounds are structured"
+    - name: parallel_research
+      type: boolean
+      default: false
+      description: "Enable parallel web research"
+    - name: researcher
+      type: agent_config
+      default: default_researcher
+      description: "Research agent if enabled"
+    - name: synthesizer
+      type: agent_config
+      default: default_synthesizer
+      description: "Agent who produces final report"
+    - name: output_type
+      type: enum
+      options: [feedback_report, test_report, validation_report, recommendation]
+      default: feedback_report
+      description: "Type of output document"
+    - name: capture_evidence
+      type: boolean
+      default: false
+      description: "Capture screenshots/recordings during discussion"
+    - name: evidence_input
+      type: directory_reference
+      description: "Directory of visual evidence to review (for testing)"
+    - name: triage_output
+      type: boolean
+      default: true
+      description: "Categorize feedback by priority"
+    - name: triage_categories
+      type: string_list
+      default: [critical, high, medium, low, out_of_scope]
+      description: "Categories for feedback triage"
+
+# Round templates - can be customized via round_prompts parameter
+default_rounds:
+  - round: 1
+    name: "Initial Reactions"
+    prompt: "What are your first impressions? What stands out?"
+  - round: 2
+    name: "Expanding"
+    prompt: "What else could this be? What adjacent possibilities exist?"
+  - round: 3
+    name: "Deep Dive"
+    prompt: "Let's go deeper on core aspects. What's most important?"
+  - round: 4
+    name: "Pain Points"
+    prompt: "What concerns you? What's missing or frustrating?"
+  - round: 5
+    name: "Final Thoughts"
+    prompt: "Overall assessment. What would make this successful?"
+
+memory:
+  backend: agentdb
+  namespace_template: "roundtable/{session_id}"
+
+agents:
+
+  - id: facilitator
+    role: discussion_leader
+    from_param: facilitator
+    tools: [memory.read, memory.write]
+    config:
+      manages: [discussion_flow, participant_engagement, time_keeping]
+      ensures: [all_voices_heard, discussion_stays_focused]
+
+  - id: participants
+    role: discussion_participants
+    from_param: participants
+    count: dynamic
+    tools: [memory.read, memory.write]
+    config:
+      speaks: in_turn_or_when_called
+      provides: perspective_from_persona
+
+  - id: researcher
+    role: background_researcher
+    enabled_by: parallel_research
+    from_param: researcher
+    default_persona: .thursian/personas/research/web-researcher.md
+    tools: [memory.read, memory.write, web.search, web.fetch]
+    config:
+      runs_parallel: true
+      contributes: supporting_evidence
+
+  - id: synthesizer
+    role: report_writer
+    from_param: synthesizer
+    default_persona: .thursian/personas/ideation/synthesizer.md
+    tools: [memory.read, filesystem.write]
+    output_contract:
+      - type: report
+        format_from_param: output_type
+        path_from_param: output_path
+
+workflow:
+
+  entry_state: initialize
+  exit_states: [report_complete]
+
+  states:
+
+    initialize:
+      agent: facilitator
+      description: "Load context and prepare for discussion"
+      actions:
+        - type: filesystem.read
+          paths_from_param: context_input
+        - type: load_evidence_if_provided
+          path_from_param: evidence_input
+        - type: initialize_session
+          set:
+            - current_round: 0
+            - total_rounds_from_param: round_count
+            - participants_from_param: participants
+        - type: load_round_structure
+          from_param: round_structure
+          default: default_rounds
+        - type: start_researcher_if_enabled
+          condition: parallel_research
+        - type: memory.write
+          key: session_initialized
+      transitions:
+        on_success: open_discussion
+
+    open_discussion:
+      agent: facilitator
+      description: "Welcome participants and frame the discussion"
+      actions:
+        - type: introduce_session
+          include:
+            - discussion_purpose
+            - context_summary
+            - participant_introductions
+            - round_overview
+            - ground_rules
+        - type: present_materials
+          from: context_input
+          with_evidence_if: capture_evidence
+        - type: memory.write
+          key: discussion_opened
+      transitions:
+        on_complete: discussion_round
+
+    discussion_round:
+      description: "One round of multi-participant discussion"
+
+      facilitator_opens:
+        agent: facilitator
+        actions:
+          - type: announce_round
+            round: current_round
+            prompt_from: round_structure
+          - type: inject_research_if_available
+            from: researcher
+          - type: memory.write
+            key: round_{round}_opened
+
+      participant_responses:
+        agents: participants
+        mode: sequential_with_reactions
+        actions:
+          - type: memory.read
+            scope: [context, previous_contributions]
+          - type: review_evidence_if_applicable
+            from: evidence_input
+          - type: contribute
+            from_persona: true
+            responding_to: round_prompt
+            reacting_to: previous_participants
+          - type: memory.write
+            key: participant_{id}_round_{round}
+
+      facilitator_synthesizes:
+        agent: facilitator
+        actions:
+          - type: memory.read
+            scope: round_{round}_contributions
+          - type: summarize_round
+            highlight: [themes, agreements, disagreements, insights]
+          - type: bridge_to_next
+            if_not_final: true
+          - type: memory.write
+            key: round_{round}_summary
+
+      transitions:
+        if_more_rounds: increment_and_continue
+        if_final_round: prepare_synthesis
+
+    increment_and_continue:
+      agent: facilitator
+      actions:
+        - type: increment_round
+        - type: check_engagement
+          ensure: all_participants_contributing
+      transitions:
+        on_success: discussion_round
+
+    prepare_synthesis:
+      agent: facilitator
+      description: "Prepare discussion for final synthesis"
+      actions:
+        - type: memory.read
+          scope: all_rounds
+        - type: stop_researcher
+          if_enabled: parallel_research
+        - type: gather_final_thoughts
+          from: participants
+          prompt: "Any final thoughts before we wrap up?"
+        - type: create_synthesis_brief
+          include:
+            - key_themes_by_round
+            - participant_positions
+            - areas_of_consensus
+            - areas_of_disagreement
+            - research_findings
+            - evidence_references
+        - type: triage_feedback_if_enabled
+          categories_from_param: triage_categories
+        - type: memory.write
+          key: synthesis_brief
+      transitions:
+        on_complete: create_report
+
+    create_report:
+      agent: synthesizer
+      description: "Create final discussion report"
+      actions:
+        - type: memory.read
+          key: synthesis_brief
+        - type: memory.read
+          scope: full_discussion
+        - type: create_report
+          format_from_param: output_type
+          templates:
+            feedback_report:
+              sections:
+                - executive_summary
+                - participant_profiles
+                - round_by_round_summary
+                - key_themes
+                - feedback_triage
+                - recommendations
+                - appendix_full_transcript
+            test_report:
+              sections:
+                - executive_summary
+                - test_scope
+                - participant_feedback
+                - issues_found
+                - severity_triage
+                - evidence_gallery
+                - recommendations
+                - next_steps
+            validation_report:
+              sections:
+                - validation_summary
+                - criteria_evaluation
+                - stakeholder_positions
+                - concerns_raised
+                - approval_status
+                - conditions_if_any
+            recommendation:
+              sections:
+                - summary
+                - discussion_highlights
+                - recommendation
+                - supporting_rationale
+                - dissenting_views
+                - action_items
+        - type: include_evidence_gallery_if
+          condition: capture_evidence
+        - type: filesystem.write
+          path_from_param: output_path
+        - type: memory.write
+          key: report_complete
+      transitions:
+        on_success: report_complete
+
+    report_complete:
+      description: "Roundtable discussion complete"
+      final: true
+      outputs:
+        - report_from_param: output_path
+        - transcript: memory://full_discussion
+        - evidence_gallery_if: capture_evidence
+      handoff:
+        artifacts:
+          - discussion_report
+          - full_transcript
+          - evidence_if_captured
+        context:
+          rounds_completed: total_rounds
+          participants: participant_count
+          consensus_level: calculated
+          triage_summary: if_enabled
+
+# Output format templates
+output_templates:
+
+  feedback_report:
+    title: "Feedback Report"
+    sections:
+      - name: executive_summary
+        description: "Key takeaways in 1-2 paragraphs"
+      - name: participant_profiles
+        description: "Who participated and their perspectives"
+      - name: round_summaries
+        description: "Summary of each discussion round"
+      - name: key_themes
+        description: "Major themes that emerged"
+      - name: feedback_triage
+        description: "Feedback categorized by priority"
+        subsections:
+          - critical: "Must address immediately"
+          - high: "Should address soon"
+          - medium: "Address when possible"
+          - low: "Nice to have"
+          - out_of_scope: "Beyond current scope"
+      - name: recommendations
+        description: "Suggested next steps"
+
+  test_report:
+    title: "Test Feedback Report"
+    sections:
+      - name: executive_summary
+        description: "Overall test findings"
+      - name: test_scope
+        description: "What was tested"
+      - name: participant_feedback
+        description: "Feedback by participant"
+      - name: issues_found
+        description: "Problems identified"
+        subsections:
+          - bugs: "Functional issues"
+          - ux_issues: "Usability problems"
+          - missing_features: "Expected but not present"
+          - enhancement_requests: "Suggested improvements"
+      - name: severity_triage
+        description: "Issues by severity"
+      - name: evidence_gallery
+        description: "Screenshots and recordings"
+      - name: next_steps
+        description: "Recommended actions"
+
+  validation_report:
+    title: "Validation Report"
+    sections:
+      - name: validation_summary
+        description: "Overall validation status"
+      - name: criteria_evaluation
+        description: "How each criterion was assessed"
+      - name: stakeholder_positions
+        description: "Each stakeholder's stance"
+      - name: concerns_raised
+        description: "Issues that need resolution"
+      - name: approval_status
+        description: "Approved / Approved with conditions / Not approved"
+      - name: conditions
+        description: "Conditions for approval if applicable"

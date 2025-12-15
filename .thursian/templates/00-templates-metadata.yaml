@@ -1,0 +1,214 @@
+name: thursian-template-registry
+version: 2.0.0
+description: >
+  Master registry of Thursian workflow templates.
+  Templates are parameterized, reusable workflow patterns that can be
+  invoked with different agents, contexts, and outputs.
+
+created_at: 2025-12-13
+updated_at: 2025-12-13
+
+architecture:
+  approach: template_based
+  description: >
+    Instead of many specific workflow files, Thursian uses 5 core templates
+    that can be parameterized for different use cases. This reduces duplication,
+    improves maintainability, and enables flexible pipeline composition.
+
+templates:
+
+  - id: dialectic
+    file: dialectic.yaml
+    version: 1.0.0
+    name: "Dialectic Conversation"
+    description: "Two-agent creative conversation with synthesis"
+    type: conversation
+    agent_slots:
+      - agent_a: "First dialectic participant"
+      - agent_b: "Second dialectic participant"
+      - synthesizer: "Output creator"
+      - facilitator: "Conversation manager (built-in)"
+      - researcher: "Optional parallel researcher"
+    key_parameters:
+      - exit_condition: [rounds, consensus, aha_moment, facilitator_call]
+      - output_format: [vision, recommendation, decision, synthesis]
+      - parallel_research: boolean
+    use_cases:
+      - "Phase 1: Ideation (Dreamer ↔ Doer)"
+      - "Creative brainstorming sessions"
+      - "Decision-making dialogues"
+      - "Conflict resolution"
+
+  - id: roundtable
+    file: roundtable.yaml
+    version: 1.0.0
+    name: "Roundtable Discussion"
+    description: "Multi-persona structured discussion with rounds"
+    type: discussion
+    agent_slots:
+      - facilitator: "Discussion leader"
+      - participants: "List of discussion participants (3-15)"
+      - researcher: "Optional parallel researcher"
+      - synthesizer: "Report writer"
+    key_parameters:
+      - round_count: "Number of discussion rounds (3-5)"
+      - round_structure: [open, guided, section_by_section]
+      - output_type: [feedback_report, test_report, validation_report, recommendation]
+      - triage_categories: "Custom priority categories"
+      - evidence_input: "Optional visual evidence for testing"
+    use_cases:
+      - "Phase 2: Focus Group (user personas)"
+      - "Phase 4: Stakeholder Review"
+      - "Phase 10: Alpha Testing"
+      - "Phase 11: Beta Testing"
+      - "Any multi-perspective feedback gathering"
+
+  - id: engineering_board
+    file: engineering-board.yaml
+    version: 1.0.0
+    name: "Engineering Board"
+    description: "Technical evaluation, decision-making, and document creation"
+    type: evaluation
+    agent_slots:
+      - board_chair: "Leads the board session"
+      - board_members: "List of technical evaluators"
+      - researcher: "Optional technical researcher"
+      - writer: "Document author"
+    key_parameters:
+      - evaluation_type: [create, review, triage, approve, design]
+      - output_type: [prd, triage_report, approval_report, adrs, architecture]
+      - approval_threshold: "For approve type (0.0-1.0)"
+      - max_iterations: "Review cycles"
+      - triage_categories: "For triage type"
+      - spawn_substages: "For design type"
+    use_cases:
+      - "Phase 3: Engineering Meeting (PRD creation)"
+      - "Phase 5: Engineering Review (triage)"
+      - "Phase 6: Architecture Planning"
+      - "Phase 8: Build Approval Gate"
+      - "Phase 12: Release Approval"
+
+  - id: planning_session
+    file: planning-session.yaml
+    version: 1.0.0
+    name: "Planning Session"
+    description: "Structured work breakdown and planning"
+    type: planning
+    agent_slots:
+      - lead_planner: "Planning facilitator"
+      - domain_experts: "Technical contributors"
+      - writer: "Planning documentarian"
+    key_parameters:
+      - planning_level: [epic, story, task]
+      - iteration_stages: "Refinement depth (1-5)"
+      - traceability_required: boolean
+      - output_type: [epics, stories, tasks, recipes, schedule]
+      - include_dependencies: boolean
+      - include_resources: boolean
+      - include_milestones: boolean
+    use_cases:
+      - "Phase 7A: Epic Scheduling"
+      - "Phase 7B: Story Expansion"
+      - "Sprint planning"
+      - "Task breakdown"
+
+  - id: build_cycle
+    file: build-cycle.yaml
+    version: 1.0.0
+    name: "Build Cycle"
+    description: "Implementation with code review and testing"
+    type: implementation
+    agent_slots:
+      - orchestrator: "Build queue manager"
+      - developers: "Implementation team"
+      - reviewers: "Code review team"
+      - testers: "Testing team"
+      - spec_validator: "Specification checker"
+      - evidence_collector: "Documentation curator"
+    key_parameters:
+      - build_mode: [initial, fix, feature_add, refactor]
+      - scope: [full, targeted, single]
+      - test_automation: [none, unit, integration, e2e, full]
+      - evidence_capture: boolean
+      - max_review_iterations: integer
+      - coverage_threshold: float
+    use_cases:
+      - "Phase 9: Prototype Build"
+      - "Alpha fix cycle"
+      - "Beta fix cycle"
+      - "Feature additions"
+      - "Bug fix sprints"
+
+template_composition:
+  description: >
+    Templates can be composed in pipelines. Each phase of a pipeline
+    invokes a template with specific parameters.
+  example:
+    pipeline: genesis-pipeline.yaml
+    phases:
+      - phase_1: "dialectic with dreamer/doer"
+      - phase_2: "roundtable with user personas"
+      - phase_3: "engineering_board in create mode"
+      - phase_4: "roundtable with stakeholders"
+      - phase_5: "engineering_board in triage mode"
+      - phase_6: "engineering_board in design mode"
+      - phase_7a: "planning_session at epic level"
+      - phase_7b: "planning_session at story level"
+      - phase_8: "engineering_board in approve mode"
+      - phase_9: "build_cycle in initial mode"
+      - phase_10: "roundtable as alpha test"
+      - phase_11: "roundtable as beta test"
+      - phase_12: "engineering_board in approve mode"
+
+persona_organization:
+  directories:
+    - .thursian/personas/ideation/
+    - .thursian/personas/focus-group/
+    - .thursian/personas/stakeholder/
+    - .thursian/personas/engineering/
+    - .thursian/personas/architecture/
+    - .thursian/personas/planning/
+    - .thursian/personas/development/
+    - .thursian/personas/testing/
+    - .thursian/personas/facilitation/
+    - .thursian/personas/research/
+
+artifact_conventions:
+  project_root: ".thursian/projects/{project-name}/"
+  subdirectories:
+    ideas: "ideas/"
+    visions: "visions/"
+    focus_groups: "focus-groups/"
+    prds: "prds/"
+    design_docs: "design-docs/"
+    adrs: "design-docs/adrs/"
+    planning: "planning/"
+    detailed_stories: "planning/detailed-stories/"
+    approval: "approval/"
+    build: "build/"
+    testing: "testing/"
+    screenshots: "testing/screenshots/"
+    videos: "testing/videos/"
+    alpha: "alpha/"
+    beta: "beta/"
+    release: "release/"
+
+memory_configuration:
+  backend: agentdb
+  persistence: true
+  namespace_template: "thursian/{pipeline}/{project-name}/{phase}"
+  retention: 90_days
+
+migration_notes:
+  from_version: "1.x (individual workflows)"
+  to_version: "2.0 (template-based)"
+  changes:
+    - "Consolidated 12+ workflow files into 5 templates"
+    - "Added pipeline definition for phase orchestration"
+    - "Introduced persona pools for agent reuse"
+    - "Standardized parameter passing"
+    - "Unified output handling"
+  backward_compatibility:
+    - "Old workflow files retained in workflows/archive/ for reference"
+    - "Same persona files used"
+    - "Same artifact paths"

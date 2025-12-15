@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "Thursian Project Metadata Template",
+  "description": "Metadata tracking for Thursian workflow projects",
+
+  "project_name": "{{project-name}}",
+  "display_name": "{{Project Display Name}}",
+  "created_at": "{{ISO-8601-timestamp}}",
+  "updated_at": "{{ISO-8601-timestamp}}",
+  "created_by": "{{user-name}}",
+
+  "status": "in-progress",
+  "current_workflow": "ideation",
+  "completed_workflows": [],
+  "next_workflow": "focus-group",
+
+  "workflows": {
+    "ideation": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "session_id": null,
+      "duration_minutes": null,
+      "artifacts": [],
+      "agents_used": []
+    },
+    "focus-group": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "session_id": null,
+      "duration_minutes": null,
+      "artifacts": [],
+      "agents_used": []
+    },
+    "engineering-meeting": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "session_id": null,
+      "duration_minutes": null,
+      "artifacts": [],
+      "agents_used": []
+    },
+    "stakeholder-review": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "session_id": null,
+      "duration_minutes": null,
+      "artifacts": [],
+      "agents_used": []
+    },
+    "technical-design": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "session_id": null,
+      "duration_minutes": null,
+      "artifacts": [],
+      "agents_used": []
+    }
+  },
+
+  "tags": ["{{domain}}", "{{category}}", "{{type}}"],
+  "domain": "{{auto-detected-domain}}",
+  "category": "{{product|service|tool|platform}}",
+  "target_audience": ["{{audience-segment-1}}", "{{audience-segment-2}}"],
+
+  "artifacts": {
+    "idea": ".thursian/projects/{{project-name}}/ideas/initial-idea.md",
+    "vision": ".thursian/projects/{{project-name}}/visions/vision-v1.md",
+    "focus_group_report": ".thursian/projects/{{project-name}}/focus-groups/report.md",
+    "focus_group_transcript": ".thursian/projects/{{project-name}}/focus-groups/conversations/full-transcript.md",
+    "prd": ".thursian/projects/{{project-name}}/prds/prd-v1.md",
+    "technical_research": ".thursian/projects/{{project-name}}/prds/technical-research.md",
+    "stakeholder_feedback": ".thursian/projects/{{project-name}}/prds/stakeholder-feedback.md",
+    "approved_prd": null,
+    "technical_design": null
+  },
+
+  "memory": {
+    "backend": "agentdb",
+    "session_namespace": "thursian/{{project-name}}",
+    "persistence": true,
+    "namespaces": {
+      "conversations": "{{project-name}}-conversations",
+      "visions": "{{project-name}}-visions",
+      "ideas": "{{project-name}}-ideas",
+      "personas": "{{project-name}}-personas",
+      "discussions": "{{project-name}}-discussions",
+      "research": "{{project-name}}-research",
+      "prds": "{{project-name}}-prds",
+      "feedback": "{{project-name}}-feedback"
+    }
+  },
+
+  "metrics": {
+    "total_duration_minutes": null,
+    "total_agents_spawned": 0,
+    "total_rounds_completed": 0,
+    "total_artifacts_generated": 0,
+    "conversation_word_count": 0
+  },
+
+  "notes": []
+}

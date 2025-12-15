@@ -1,0 +1,725 @@
+{
+  "name": "Ideation-Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "orchestrate",
+        "options": {}
+      },
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -480,
+        -160
+      ],
+      "webhookId": "orchestrate",
+      "id": "7dd5d9e2-45a8-4d35-bfda-0f4731db4930"
+    },
+    {
+      "parameters": {
+        "jsCode": " // Load orchestration config from body\n  const body = $input.item.json.body;\n  const configPath = body.config_path;\n  const inlineConfig = body.config;\n\n  // Generate a proper UUID v4 if not provided\n  function generateUUID() {\n    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {\n      const r = Math.random() * 16 | 0;\n      const v = c === 'x' ? r : (r & 0x3 | 0x8);\n      return v.toString(16);\n    });\n  }\n\n  const sessionId = body.session_id || generateUUID();\n\n  return [{\n    json: {\n      configPath: configPath,\n      config: inlineConfig,\n      sessionId: sessionId,\n      timestamp: new Date().toISOString()\n    }\n  }];\n"
+      },
+      "name": "Parse Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        -160
+      ],
+      "id": "c609e897-5662-4903-aa79-11dde9093239"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.configPath }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "name": "Has Config Path?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        -160
+      ],
+      "id": "c8bfaa14-6234-42a0-97c2-d856f88e726b"
+    },
+    {
+      "parameters": {
+        "command": "=cat {{ $json.configPath }}"
+      },
+      "name": "Load Config File",
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        128,
+        -256
+      ],
+      "id": "b4b4121a-1e86-44b6-817e-c0b2ebf25968",
+      "credentials": {
+        "sshPassword": {
+          "id": "OP3GPqTb8CD4IaWc",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse loaded config or use inline\n  let config;\n\n  if ($input.item.json.stdout) {\n    // Loaded from file\n    config = JSON.parse($input.item.json.stdout);\n  } else {\n    // Use inline config\n    config = $input.item.json.config;\n  }\n\n  // Get sessionId from Parse Request node (upstream, not current input)\n  const sessionId = $('Parse Request').first().json.sessionId;\n\n  // Resolve placeholders in paths\n  const projectName = config.orchestration.project_name;\n  config.output.artifacts_path = config.output.artifacts_path.replace('{project_name}', projectName);\n\n  return [{\n    json: {\n      config: config,\n      sessionId: sessionId,\n      projectPath: config.orchestration.project_path,\n      projectName: projectName,\n      currentRound: 0\n    }\n  }];"
+      },
+      "name": "Process Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        -160
+      ],
+      "id": "cb5f03f7-e097-49d6-8289-864316e709cd"
+    },
+    {
+      "parameters": {
+        "command": "=cd {{ $json.projectPath }} && cat {{ $json.config.parameters.personas.dreamer }}"
+      },
+      "name": "Load Dreamer Persona",
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        528,
+        -256
+      ],
+      "id": "a32ba8d1-a88d-499a-90dc-cb826e9cb9b4",
+      "credentials": {
+        "sshPassword": {
+          "id": "OP3GPqTb8CD4IaWc",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "=cd {{ $json.projectPath }} && cat {{ $json.config.parameters.personas.doer }}"
+      },
+      "name": "Load Doer Persona",
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        528,
+        -144
+      ],
+      "id": "d3795868-396b-405e-83c3-0c6d50be859a",
+      "credentials": {
+        "sshPassword": {
+          "id": "OP3GPqTb8CD4IaWc",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "=cd {{ $json.projectPath }} && cat {{ $json.config.parameters.personas.synthesizer }}"
+      },
+      "name": "Load Synthesizer Persona",
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        528,
+        -16
+      ],
+      "id": "27b4b867-2ac4-4f43-a547-483e6b19251b",
+      "credentials": {
+        "sshPassword": {
+          "id": "OP3GPqTb8CD4IaWc",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get config and sessionId directly from Process Config node (upstream reference)\n  const processConfigData = $('Process Config').first().json;\n  const sessionId = processConfigData.sessionId;\n  const configData = processConfigData.config;\n  const projectPath = processConfigData.projectPath;\n  const projectName = processConfigData.projectName;\n\n  // Get personas from the merged SSH outputs (current input)\n  const allItems = $input.all();\n\n  let dreamerPersona = '';\n  let doerPersona = '';\n  let synthesizerPersona = '';\n\n  allItems.forEach((item) => {\n    const command = item.json.command || '';\n    const stdout = item.json.stdout || '';\n\n    if (command.includes('dreamer')) {\n      dreamerPersona = stdout;\n    } else if (command.includes('doer')) {\n      doerPersona = stdout;\n    } else if (command.includes('synthesizer')) {\n      synthesizerPersona = stdout;\n    }\n  });\n\n  return [{\n    json: {\n      config: configData,\n      sessionId: sessionId,\n      projectPath: projectPath,\n      projectName: projectName,\n      personas: {\n        dreamer: dreamerPersona,\n        doer: doerPersona,\n        synthesizer: synthesizerPersona\n      },\n      conversationHistory: [],\n      currentRound: 0,\n      ahaDetected: false\n    }\n  }];"
+      },
+      "name": "Initialize Session",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        -144
+      ],
+      "id": "d2905251-949b-44a5-b6e6-4e9602ed3a1d"
+    },
+    {
+      "parameters": {
+        "command": "=cd {{ $json.projectPath }} && claude {{ $json.resumeFlag }}{{ $json.sessionFlag }} --dangerously-skip-permissions -p \"$(echo '{{ $json.promptBase64 }}' | base64 -d)\""
+      },
+      "name": "Dreamer Turn",
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        1472,
+        -144
+      ],
+      "id": "71084753-9a31-44cb-b5f5-571ce7cf9d53",
+      "credentials": {
+        "sshPassword": {
+          "id": "OP3GPqTb8CD4IaWc",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Try to get session data from previous round, fall back to Initialize Session for first round\n  let sessionData;\n\n  try {\n    const prevRound = $('Record Doer & Evaluate').first().json;\n    if (prevRound && prevRound.config) {\n      sessionData = prevRound;\n    } else {\n      sessionData = $('Initialize Session').first().json;\n    }\n  } catch (e) {\n    sessionData = $('Initialize Session').first().json;\n  }\n\n  // Add Dreamer's response to history\n  const dreamerResponse = $input.item.json.stdout;\n  const conversationHistory = [...sessionData.conversationHistory];\n  conversationHistory.push('**DREAMER (Round ' + (sessionData.currentRound + 1) + '):**\\n' + dreamerResponse);\n\n  return [{\n    json: {\n      config: sessionData.config,\n      sessionId: sessionData.sessionId,\n      projectPath: sessionData.projectPath,\n      projectName: sessionData.projectName,\n      personas: sessionData.personas,\n      conversationHistory: conversationHistory,\n      currentRound: sessionData.currentRound,\n      ahaDetected: sessionData.ahaDetected,\n      lastSpeaker: 'dreamer',\n      lastResponse: dreamerResponse\n    }\n  }];\n"
+      },
+      "name": "Record Dreamer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1632,
+        -144
+      ],
+      "id": "2aa856d2-6420-4465-9388-df76a323dda6"
+    },
+    {
+      "parameters": {
+        "command": "=cd {{ $json.projectPath }} && claude -r {{ $json.sessionId }} --dangerously-skip-permissions -p \"$(echo '{{ $json.promptBase64 }}' | base64 -d)\""
+      },
+      "name": "Doer Turn",
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        2016,
+        -144
+      ],
+      "id": "8d63f366-0b67-405c-b4a8-c740f75dbbcc",
+      "credentials": {
+        "sshPassword": {
+          "id": "OP3GPqTb8CD4IaWc",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get session data from Record Dreamer (upstream reference)\n  const sessionData = $('Record Dreamer').first().json;\n\n  // Add Doer's response to history\n  const doerResponse = $input.item.json.stdout;\n  const conversationHistory = [...sessionData.conversationHistory];\n  conversationHistory.push('**DOER (Round ' + (sessionData.currentRound + 1) + '):**\\n' + doerResponse);\n\n  // Check for aha triggers\n  const ahaTriggers = sessionData.config.parameters.aha_triggers;\n  const ahaDetected = ahaTriggers.some(trigger =>\n    doerResponse.toLowerCase().includes(trigger.toLowerCase())\n  );\n\n  const currentRound = sessionData.currentRound + 1;\n  const hardMaxRounds = 6; // Enforce hard limit\n  const configMaxRounds = Math.min(sessionData.config.parameters.max_rounds, hardMaxRounds);\n\n  // Enforce minimum 3 rounds, maximum 6 rounds\n  const minRounds = 3;\n  const maxRounds = Math.min(configMaxRounds, hardMaxRounds);\n\n  // Continue if: under min rounds OR (no aha detected AND under max rounds)\n  const shouldContinue = currentRound < minRounds || (!ahaDetected && currentRound < maxRounds);\n\n  return [{\n    json: {\n      config: sessionData.config,\n      sessionId: sessionData.sessionId,\n      projectPath: sessionData.projectPath,\n      projectName: sessionData.projectName,\n      personas: sessionData.personas,\n      conversationHistory: conversationHistory,\n      currentRound: currentRound,\n      ahaDetected: ahaDetected,\n      lastSpeaker: 'doer',\n      lastResponse: doerResponse,\n      shouldContinue: shouldContinue\n    }\n  }];"
+      },
+      "name": "Record Doer & Evaluate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        -144
+      ],
+      "id": "bd4840e3-eca9-4c6b-8758-adca905699d1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $('Prepare Log Entry').first().json.shouldContinue }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Continue Rounds?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        3024,
+        -144
+      ],
+      "id": "6192e7f1-4064-46d4-93a5-75c4227869b9"
+    },
+    {
+      "parameters": {
+        "command": "=cd {{ $json.projectPath }} && claude -r {{ $json.sessionId }} --dangerously-skip-permissions -p \"$(echo '{{ $json.promptBase64 }}' | base64 -d)\""
+      },
+      "name": "Synthesize Vision",
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        3520,
+        -128
+      ],
+      "id": "01437bd0-4070-45a6-a923-2c2dd7f11978",
+      "credentials": {
+        "sshPassword": {
+          "id": "OP3GPqTb8CD4IaWc",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get data from upstream nodes\n  const writeOutput = $('Write Vision File').first().json;\n  const preparedData = $('Prepare Vision File').first().json;\n\n  // Get session data from Record Doer & Evaluate (last round)\n  const sessionData = $('Record Doer & Evaluate').first().json;\n  const config = sessionData.config;\n  const sessionId = sessionData.sessionId;\n  const rounds = sessionData.currentRound;\n\n  // Parse the written filenames from SSH output\n  const writtenMessage = writeOutput.stdout || '';\n  const outputDir = preparedData.dirPath;\n\n  // Extract base names (actual filenames will be versioned if files existed)\n  const conversationLogBase = preparedData.journeyBaseName + '.md';\n  const visionDocBase = preparedData.visionBaseName + '.md';\n\n  return [{\n    json: {\n      success: true,\n      orchestration_type: config.orchestration.type,\n      project_name: config.orchestration.project_name,\n      session_id: sessionId,\n      rounds_completed: rounds,\n      aha_detected: sessionData.ahaDetected,\n      output_directory: outputDir,\n      conversation_log_file: conversationLogBase,\n      vision_file: visionDocBase,\n      write_result: writtenMessage,\n      preview: 'Two documents created: conversation log and vision document'\n    }\n  }];"
+      },
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4288,
+        -128
+      ],
+      "id": "bae2c2ca-1f0a-4cb9-8798-01cd20129d00"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        816,
+        -160
+      ],
+      "id": "1178940b-5c8a-45e5-b100-1ca32a090de1",
+      "name": "Merge"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -496,
+        -480
+      ],
+      "id": "84af96cf-3d4a-465c-a983-2bb1c85a4295",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Simulate webhook body input with session ID\n  return [{\n    json: {\n      body: {\n        config_path: \"/workspace/GIT/PixelDelve/automation/ideation-config.json\",\n        config: null,\n        session_id: \"test-session-\" + Date.now()\n      }\n    }\n  }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        -480
+      ],
+      "id": "f0958dde-fa54-48f5-a814-864d81fa5ec8",
+      "name": "Test Data"
+    },
+    {
+      "parameters": {
+        "command": "=mkdir -p \"{{ $json.logDirPath }}\" && echo \"{{ $json.logContentBase64 }}\" | base64 -d >> \"{{ $json.logFilePath }}\""
+      },
+      "name": "Append Log",
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        2784,
+        -144
+      ],
+      "id": "dd07e955-adf2-4bc6-8742-c366ec3170dd",
+      "credentials": {
+        "sshPassword": {
+          "id": "OP3GPqTb8CD4IaWc",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "  const sessionData = $('Record Doer & Evaluate').first().json;\n  const fullOutput = $input.item.json.stdout;\n  const config = sessionData.config;\n  const projectPath = sessionData.projectPath;\n  const projectName = sessionData.projectName;\n\n  // Split on separator (three lines of dashes)\n  const separator = '---\\n---\\n---';\n  const documents = fullOutput.split(separator);\n\n  const conversationLog = documents[0] ? documents[0].trim() : '';\n  const visionDoc = documents[1] ? documents[1].trim() : fullOutput;\n\n  // Prepare paths with base names (versioning will happen in SSH command)\n  const dirPath = projectPath + '/' + config.output.artifacts_path;\n  const journeyBaseName = projectName + '-ideation-full';\n  const visionBaseName = projectName + '-vision';\n\n  // Base64 encode both documents\n  const journeyBase64 = Buffer.from(conversationLog).toString('base64');\n  const visionBase64 = Buffer.from(visionDoc).toString('base64');\n\n  return [{\n    json: {\n      ...sessionData,\n      conversationLog: conversationLog,\n      visionDoc: visionDoc,\n      journeyBase64: journeyBase64,\n      visionBase64: visionBase64,\n      dirPath: dirPath,\n      journeyBaseName: journeyBaseName,\n      visionBaseName: visionBaseName\n    }\n  }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3744,
+        -128
+      ],
+      "id": "efae528a-3441-4287-beab-8cd42466f2f5",
+      "name": "Prepare Vision File"
+    },
+    {
+      "parameters": {
+        "command": "=mkdir -p \"{{ $json.dirPath }}\" && cd \"{{ $json.dirPath }}\" && JOURNEY_BASE=\"{{ $json.journeyBaseName }}\" && VISION_BASE=\"{{ $json.visionBaseName }}\" && JOURNEY_FILE=\"${JOURNEY_BASE}.md\" && COUNTER=1 && while [ -f \"$JOURNEY_FILE\" ]; do JOURNEY_FILE=\"${JOURNEY_BASE}_${COUNTER}.md\" && COUNTER=$((COUNTER + 1)); done && VISION_FILE=\"${VISION_BASE}.md\" && COUNTER=1 && while [ -f \"$VISION_FILE\" ]; do VISION_FILE=\"${VISION_BASE}_${COUNTER}.md\" && COUNTER=$((COUNTER + 1)); done && echo \"{{ $json.journeyBase64 }}\" | base64 -d > \"$JOURNEY_FILE\" && echo \"{{ $json.visionBase64 }}\" | base64 -d > \"$VISION_FILE\" && echo \"Written: $JOURNEY_FILE and $VISION_FILE\""
+      },
+      "name": "Write Vision File",
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        4016,
+        -128
+      ],
+      "id": "6923f688-2b7c-46dd-ab26-62229da2a5f7",
+      "credentials": {
+        "sshPassword": {
+          "id": "OP3GPqTb8CD4IaWc",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "let sessionData;\n  let prepareLogData;\n\n  try {\n    prepareLogData = $('Prepare Log Entry').first().json;\n    if (prepareLogData && prepareLogData.personas) {\n      sessionData = prepareLogData;\n    } else {\n      sessionData = $input.item.json;\n    }\n  } catch (e) {\n    sessionData = $input.item.json;\n  }\n\n  const prompt = 'PERSONA:\\n' + sessionData.personas.dreamer + '\\n\\n' +\n    'CONTEXT:\\n' +\n    'You are the Dreamer in an ideation session. This is round ' + (sessionData.currentRound + 1) + '.\\n\\n' +\n    'INITIAL IDEA:\\n' + sessionData.config.input.idea_text + '\\n\\n' +\n    'PREVIOUS CONVERSATION:\\n' + sessionData.conversationHistory.join('\\n\\n') + '\\n\\n' +\n    'Respond as the Dreamer, building on what\\'s been said. Be excited, chaotic, full of what-ifs.';\n\n  const promptBase64 = Buffer.from(prompt).toString('base64');\n  const isFirstRound = sessionData.currentRound === 0;\n  const resumeFlag = isFirstRound ? '' : '-r ';\n  const sessionFlag = isFirstRound ? '--session-id ' + sessionData.sessionId : sessionData.sessionId;\n\n  return [{\n    json: {\n      ...sessionData,\n      promptBase64: promptBase64,\n      resumeFlag: resumeFlag,\n      sessionFlag: sessionFlag\n    }\n  }];"
+      },
+      "name": "Dreamer Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        -144
+      ],
+      "id": "711a60d8-c1d7-443e-a52e-10141e71b9dc"
+    },
+    {
+      "parameters": {
+        "jsCode": "const sessionData = $input.item.json;\n  const prompt = 'PERSONA:\\n' + sessionData.personas.doer + '\\n\\n' +\n    'CONTEXT:\\n' +\n    'You are the Doer in an ideation session. This is round ' + (sessionData.currentRound + 1) + '.\\n\\n' +\n    'INITIAL IDEA:\\n' + sessionData.config.input.idea_text + '\\n\\n' +\n    'CONVERSATION SO FAR:\\n' + sessionData.conversationHistory.join('\\n\\n') + '\\n\\n' +\n    'Respond as the Doer. Ground the Dreamer\\'s ideas. If having an ah-ha moment, say so!';\n\n  const promptBase64 = Buffer.from(prompt).toString('base64');\n\n  return [{\n    json: {\n      ...sessionData,\n      promptBase64: promptBase64\n    }\n  }];"
+      },
+      "name": "Doer Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        -144
+      ],
+      "id": "bc0f81c5-aa49-4e82-a39c-a26154e5be78"
+    },
+    {
+      "parameters": {
+        "jsCode": "  // Get session data from Record Doer & Evaluate (upstream, not input)\n  const sessionData = $('Record Doer & Evaluate').first().json;\n\n  const prompt = 'PERSONA:\\n' + sessionData.personas.synthesizer + '\\n\\n' +\n    'CONTEXT:\\n' +\n    'You are the Synthesizer. The Dreamer and Doer had ' + sessionData.currentRound + ' rounds of conversation.\\n\\n' +\n    'FULL CONVERSATION:\\n' + sessionData.conversationHistory.join('\\n\\n') + '\\n\\n' +\n    'Your task: Create TWO documents.\\n\\n' +\n    'DOCUMENT 1: CONVERSATION LOG (' + sessionData.projectName + '-ideation-full.md)\\n' +\n    'Organize exact quotes by round:\\n' +\n    '## Round 1\\n' +\n    '**DREAMER:** [exact quote]\\n' +\n    '**DOER:** [exact quote]\\n' +\n    '[Repeat for all ' + sessionData.currentRound + ' rounds]\\n\\n' +\n    'DOCUMENT 2: VISION (' + sessionData.projectName + '-vision.md)\\n' +\n    'Professional synthesis with sections:\\n' +\n    '1. Core Concept\\n2. Ah-Ha Insight\\n3. Key Features\\n4. MVP Scope\\n' +\n    '5. Technical Direction\\n6. Future Possibilities\\n7. User Impact\\n8. Next Steps\\n\\n' +\n    'SEPARATOR: Place exactly three lines of dashes between documents:\\n' +\n    '---\\\\n---\\\\n---\\n\\n' +\n    'IMPORTANT: Stay neutral. Just organize and structure content.';\n\n  const promptBase64 = Buffer.from(prompt).toString('base64');\n\n  return [{\n    json: {\n      ...sessionData,\n      promptBase64: promptBase64\n    }\n  }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3296,
+        -128
+      ],
+      "id": "a7b214ee-c565-4973-abb8-e5f3bfad4d86",
+      "name": "Synthesis Prompt"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get session data - try from input first, then from upstream\n  let sessionData;\n\n  try {\n    sessionData = $input.item.json;\n  } catch (e) {\n    throw new Error('No input data available');\n  }\n\n  // Get config - might need to reference upstream if not in input\n  let config = sessionData.config;\n  if (!config) {\n    try {\n      config = $('Record Doer & Evaluate').first().json.config;\n    } catch (e) {\n      throw new Error('Config not found in input or Record Doer & Evaluate');\n    }\n  }\n\n  const projectPath = sessionData.projectPath || $('Record Doer & Evaluate').first().json.projectPath;\n  const projectName = sessionData.projectName || $('Record Doer & Evaluate').first().json.projectName;\n  const sessionId = sessionData.sessionId || $('Record Doer & Evaluate').first().json.sessionId;\n  const currentRound = sessionData.currentRound || 1;\n  const conversationHistory = sessionData.conversationHistory || [];\n\n  const dirPath = projectPath + '/' + config.output.artifacts_path;\n  const filePath = dirPath + '/conversation-log.md';\n\n  // Build header for first round\n  let header = '';\n  if (currentRound === 1) {\n    header = '# Ideation Session: ' + projectName + '\\n\\n' +\n      '**Initial Idea:** ' + config.input.idea_text + '\\n\\n' +\n      '**Session ID:** ' + sessionId + '\\n' +\n      '**Started:** ' + new Date().toISOString() + '\\n\\n---\\n\\n';\n  }\n\n  // Build round content\n  const historyLength = conversationHistory.length;\n  const dreamerEntry = conversationHistory[historyLength - 2] || '';\n  const doerEntry = conversationHistory[historyLength - 1] || '';\n\n  const roundContent = '\\n## Round ' + currentRound + '\\n\\n' +\n    dreamerEntry + '\\n\\n' +\n    doerEntry + '\\n\\n---\\n';\n\n  const fullContent = header + roundContent;\n  const contentBase64 = Buffer.from(fullContent).toString('base64');\n\n  return [{\n    json: {\n      config: config,\n      sessionId: sessionId,\n      projectPath: projectPath,\n      projectName: projectName,\n      currentRound: currentRound,\n      conversationHistory: conversationHistory,\n      personas: sessionData.personas,\n      ahaDetected: sessionData.ahaDetected,\n      shouldContinue: sessionData.shouldContinue,\n      logDirPath: dirPath,\n      logFilePath: filePath,\n      logContentBase64: contentBase64,\n      isFirstRound: currentRound === 1\n    }\n  }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2496,
+        -144
+      ],
+      "id": "53ed4ac0-08dd-47a8-9f40-b60001a96b3a",
+      "name": "Prepare Log Entry"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Request": {
+      "main": [
+        [
+          {
+            "node": "Has Config Path?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Config Path?": {
+      "main": [
+        [
+          {
+            "node": "Load Config File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Config File": {
+      "main": [
+        [
+          {
+            "node": "Process Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Config": {
+      "main": [
+        [
+          {
+            "node": "Load Dreamer Persona",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load Doer Persona",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load Synthesizer Persona",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Dreamer Persona": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Doer Persona": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Load Synthesizer Persona": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Initialize Session": {
+      "main": [
+        [
+          {
+            "node": "Dreamer Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dreamer Turn": {
+      "main": [
+        [
+          {
+            "node": "Record Dreamer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Dreamer": {
+      "main": [
+        [
+          {
+            "node": "Doer Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Doer Turn": {
+      "main": [
+        [
+          {
+            "node": "Record Doer & Evaluate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Doer & Evaluate": {
+      "main": [
+        [
+          {
+            "node": "Prepare Log Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue Rounds?": {
+      "main": [
+        [
+          {
+            "node": "Dreamer Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Synthesis Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Synthesize Vision": {
+      "main": [
+        [
+          {
+            "node": "Prepare Vision File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Initialize Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Test Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test Data": {
+      "main": [
+        [
+          {
+            "node": "Parse Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Log": {
+      "main": [
+        [
+          {
+            "node": "Continue Rounds?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Vision File": {
+      "main": [
+        [
+          {
+            "node": "Write Vision File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Vision File": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dreamer Prompt": {
+      "main": [
+        [
+          {
+            "node": "Dreamer Turn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Doer Prompt": {
+      "main": [
+        [
+          {
+            "node": "Doer Turn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Synthesis Prompt": {
+      "main": [
+        [
+          {
+            "node": "Synthesize Vision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Log Entry": {
+      "main": [
+        [
+          {
+            "node": "Append Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "12367abd-2b7b-4717-9838-67a75e8ec903",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "245cdee5fd47053838d002bafdf9323bb8932d8264f0b7709fb0e5fa31a7f778"
+  },
+  "id": "FEVfjR02p8FRFjbR",
+  "tags": []
+}

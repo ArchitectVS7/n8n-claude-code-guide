@@ -1,0 +1,574 @@
+name: build_cycle
+description: >
+  Implementation cycle template. An orchestrator manages a queue of tasks,
+  assigning them to developers, running code reviews, and executing tests.
+  Used for initial prototype builds, alpha/beta fix cycles, and feature additions.
+
+version: 1.0.0
+template_type: implementation
+
+# Template Parameters
+parameters:
+  required:
+    - name: orchestrator
+      type: agent_config
+      description: "Agent who manages the build queue"
+    - name: developers
+      type: agent_config_list
+      description: "Developer agents available for implementation"
+    - name: reviewers
+      type: agent_config_list
+      description: "Code review agents"
+    - name: task_queue
+      type: file_reference
+      description: "File containing tasks to implement"
+    - name: output_path
+      type: path_template
+      description: "Where to write build outputs"
+
+  optional:
+    - name: build_mode
+      type: enum
+      options: [initial, fix, feature_add, refactor]
+      default: initial
+      description: "Type of build cycle"
+    - name: scope
+      type: enum
+      options: [full, targeted, single]
+      default: full
+      description: "Scope of implementation"
+    - name: target_items
+      type: string_list
+      description: "Specific items to implement (for targeted scope)"
+    - name: testers
+      type: agent_config_list
+      description: "Testing agents"
+    - name: test_automation
+      type: enum
+      options: [none, unit, integration, e2e, full]
+      default: full
+      description: "Level of automated testing"
+    - name: automation_framework
+      type: string
+      default: playwright
+      description: "E2E test framework"
+    - name: evidence_capture
+      type: boolean
+      default: true
+      description: "Capture screenshots and videos"
+    - name: evidence_path
+      type: path_template
+      description: "Where to store visual evidence"
+    - name: max_review_iterations
+      type: integer
+      default: 3
+      description: "Max code review rounds per task"
+    - name: require_tests_pass
+      type: boolean
+      default: true
+      description: "Block on test failures"
+    - name: coverage_threshold
+      type: float
+      default: 0.80
+      description: "Required test coverage"
+    - name: spec_validator
+      type: agent_config
+      description: "Agent for final spec validation"
+    - name: evidence_collector
+      type: agent_config
+      description: "Agent for collecting build evidence"
+    - name: architecture_docs
+      type: file_reference_list
+      description: "Architecture documents for compliance checking"
+
+# Developer assignment rules
+developer_assignment:
+  rules:
+    - task_type: backend
+      prefer: [backend_developer, senior_developer]
+    - task_type: frontend
+      prefer: [frontend_developer, senior_developer]
+    - task_type: fullstack
+      prefer: [senior_developer]
+    - task_type: infrastructure
+      prefer: [devops_developer, senior_developer]
+    - task_type: database
+      prefer: [backend_developer, data_engineer]
+    - task_type: security
+      prefer: [security_specialist, senior_developer]
+      additional_review: security_reviewer
+
+memory:
+  backend: agentdb
+  namespace_template: "build/{session_id}"
+
+agents:
+
+  - id: orchestrator
+    role: build_manager
+    from_param: orchestrator
+    tools: [memory.read, memory.write, task.assign, task.status]
+    config:
+      manages: [task_queue, assignments, progress, blockers]
+      tracks: [completion, coverage, issues]
+
+  - id: developers
+    role: implementers
+    from_param: developers
+    count: dynamic
+    tools: [memory.read, memory.write, filesystem.read, filesystem.write, code.execute, git.operations]
+    config:
+      implements: [features, fixes, tests]
+      follows: [recipes, architecture, style_guides]
+
+  - id: reviewers
+    role: code_reviewers
+    from_param: reviewers
+    count: dynamic
+    tools: [memory.read, memory.write, filesystem.read, git.operations]
+    config:
+      reviews: [code_quality, architecture_compliance, scope, security]
+      provides: [feedback, approval, rejection]
+
+  - id: testers
+    role: test_executors
+    from_param: testers
+    tools: [memory.read, memory.write, test.execute, playwright.run, screenshot.capture]
+    config:
+      executes: [unit, integration, e2e]
+      captures: [screenshots, videos, logs]
+
+  - id: spec_validator
+    role: compliance_checker
+    from_param: spec_validator
+    tools: [memory.read, memory.write, filesystem.read]
+    config:
+      validates: [spec_compliance, no_scope_creep, completeness]
+
+  - id: evidence_collector
+    role: documentation_curator
+    from_param: evidence_collector
+    tools: [memory.read, filesystem.read, filesystem.write]
+    output_contract:
+      - type: build_summary
+        path_from_param: output_path
+      - type: test_report
+        path: "{output_path}/test-report.md"
+      - type: evidence_gallery
+        path_from_param: evidence_path
+
+workflow:
+
+  entry_state: initialize
+  exit_states: [build_complete, build_failed]
+
+  states:
+
+    # INITIALIZATION
+
+    initialize:
+      agent: orchestrator
+      description: "Load task queue and prepare build environment"
+      actions:
+        - type: filesystem.read
+          path_from_param: task_queue
+        - type: filesystem.read
+          paths_from_param: architecture_docs
+        - type: parse_task_queue
+          extract: [tasks, dependencies, priorities]
+        - type: filter_by_scope
+          scope_from_param: scope
+          targets_from_param: target_items
+        - type: create_task_tracker
+          fields: [id, status, assigned_to, attempts, blockers]
+        - type: setup_environment
+          actions:
+            - initialize_git_branch
+            - setup_test_framework
+            - create_evidence_directories
+        - type: memory.write
+          key: initialization_complete
+      transitions:
+        on_success: announce_build
+
+    announce_build:
+      agent: orchestrator
+      description: "Announce build start"
+      actions:
+        - type: announce
+          template: |
+            BUILD CYCLE INITIATED
+            Mode: {build_mode}
+            Scope: {scope}
+            Tasks: {task_count}
+
+            Process: Implement → Review → Test → Complete
+
+            Beginning implementation...
+        - type: memory.write
+          key: build_announced
+      transitions:
+        on_success: check_next_task
+
+    # MAIN LOOP
+
+    check_next_task:
+      agent: orchestrator
+      description: "Check for next available task"
+      actions:
+        - type: memory.read
+          key: task_queue
+        - type: find_next_task
+          criteria:
+            - status: pending
+            - dependencies_met: true
+          order_by: [priority, dependency_order]
+        - type: evaluate_queue
+          check: [has_pending, all_deps_clear]
+      transitions:
+        if_task_available: assign_task
+        if_blocked: handle_blockers
+        if_queue_empty: proceed_to_final_testing
+
+    assign_task:
+      agent: orchestrator
+      description: "Assign task to appropriate developer"
+      actions:
+        - type: load_task_details
+          from: task_queue
+        - type: determine_developer
+          using: developer_assignment.rules
+          based_on: task.type
+        - type: prepare_assignment
+          include:
+            - task_details
+            - acceptance_criteria
+            - implementation_recipe
+            - architecture_context
+            - files_to_modify
+        - type: update_task_status
+          status: in_progress
+          assigned_to: selected_developer
+        - type: memory.write
+          key: assignment_{task_id}
+      transitions:
+        on_assigned: implement_task
+
+    implement_task:
+      description: "Developer implements the task"
+      dynamic_agent: assigned_developer
+      actions:
+        - type: memory.read
+          key: assignment_{task_id}
+        - type: acknowledge_assignment
+        - type: follow_recipe
+          from: task.implementation_recipe
+          with_checkpoints: true
+        - type: write_tests
+          coverage_target_from_param: coverage_threshold
+        - type: run_local_tests
+        - type: git.commit
+          message: "feat({task_id}): {description}"
+        - type: self_review
+          checklist:
+            - matches_acceptance_criteria
+            - follows_architecture
+            - no_scope_creep
+            - tests_passing
+        - type: memory.write
+          key: implementation_{task_id}
+      transitions:
+        on_complete: submit_for_review
+        on_blocked: report_blocker
+
+    submit_for_review:
+      agent: orchestrator
+      description: "Submit for code review"
+      actions:
+        - type: update_task_status
+          status: review
+        - type: prepare_review_package
+          include: [diff, files, tests, notes, criteria]
+        - type: assign_reviewer
+          from: reviewers
+          additional_if: task.requires_security_review
+        - type: memory.write
+          key: review_request_{task_id}
+      transitions:
+        on_ready: code_review
+
+    code_review:
+      description: "Reviewer evaluates implementation"
+      dynamic_agent: assigned_reviewer
+      actions:
+        - type: memory.read
+          keys: [review_request_{task_id}, implementation_{task_id}]
+        - type: load_architecture
+          from_param: architecture_docs
+        - type: review_code
+          checklist:
+            - architecture_alignment: critical
+            - scope_compliance: critical
+            - test_coverage: major
+            - code_quality: major
+            - security: critical
+        - type: identify_issues
+          severity: [blocking, major, minor, nitpick]
+        - type: determine_verdict
+          options: [approved, changes_requested, rejected]
+        - type: provide_feedback
+        - type: memory.write
+          key: review_result_{task_id}_{iteration}
+      transitions:
+        if_approved: run_task_tests
+        if_changes_requested: request_changes
+        if_rejected: escalate_failure
+
+    request_changes:
+      agent: orchestrator
+      description: "Request changes from developer"
+      actions:
+        - type: check_iteration
+          current: review_iteration
+          max_from_param: max_review_iterations
+        - type: prepare_change_request
+        - type: increment_iteration
+        - type: memory.write
+          key: changes_requested_{task_id}
+      transitions:
+        if_can_iterate: address_feedback
+        if_max_iterations: escalate_failure
+
+    address_feedback:
+      description: "Developer addresses review feedback"
+      dynamic_agent: assigned_developer
+      actions:
+        - type: memory.read
+          key: changes_requested_{task_id}
+        - type: for_each_issue
+          actions: [understand, fix, test_fix]
+        - type: run_local_tests
+        - type: git.commit
+          message: "fix({task_id}): address review feedback"
+        - type: memory.write
+          key: feedback_addressed_{task_id}
+      transitions:
+        on_complete: submit_for_review
+
+    run_task_tests:
+      description: "Run tests for completed task"
+      dynamic_agent: assigned_tester
+      actions:
+        - type: update_task_status
+          status: testing
+        - type: run_tests
+          types_from_param: test_automation
+        - type: analyze_results
+        - type: capture_evidence_if_enabled
+          condition: evidence_capture
+        - type: memory.write
+          key: test_results_{task_id}
+      transitions:
+        if_pass: complete_task
+        if_fail: handle_test_failure
+
+    handle_test_failure:
+      agent: orchestrator
+      description: "Handle test failures"
+      actions:
+        - type: analyze_failure
+        - type: route_fix
+          to: assigned_developer
+      transitions:
+        on_routed: fix_tests
+
+    fix_tests:
+      description: "Developer fixes test failures"
+      dynamic_agent: assigned_developer
+      actions:
+        - type: debug_failures
+        - type: fix_issues
+        - type: run_local_tests
+        - type: git.commit
+          message: "fix({task_id}): fix failing tests"
+      transitions:
+        on_complete: run_task_tests
+
+    complete_task:
+      agent: orchestrator
+      description: "Mark task complete"
+      actions:
+        - type: update_task_status
+          status: complete
+        - type: record_completion
+        - type: update_progress
+        - type: announce_completion
+      transitions:
+        on_success: check_next_task
+
+    handle_blockers:
+      agent: orchestrator
+      description: "Handle blocked tasks"
+      actions:
+        - type: identify_blockers
+        - type: attempt_resolution
+        - type: reorder_queue_if_needed
+      transitions:
+        if_resolved: check_next_task
+        if_unresolvable: escalate_blocker
+
+    # FINAL TESTING
+
+    proceed_to_final_testing:
+      agent: orchestrator
+      description: "All tasks complete, run comprehensive tests"
+      actions:
+        - type: verify_all_complete
+        - type: announce
+          message: "All tasks implemented. Running comprehensive E2E tests..."
+        - type: prepare_test_environment
+      transitions:
+        on_ready: run_comprehensive_tests
+
+    run_comprehensive_tests:
+      description: "Run full E2E test suite"
+      dynamic_agent: e2e_tester
+      actions:
+        - type: generate_test_scenarios
+          from: acceptance_criteria
+        - type: start_evidence_capture
+          if_enabled: evidence_capture
+        - type: for_each_scenario
+          actions:
+            - execute_test
+            - capture_screenshot
+            - log_result
+        - type: stop_evidence_capture
+        - type: aggregate_results
+        - type: memory.write
+          key: e2e_results
+      transitions:
+        if_all_pass: capture_major_screens
+        if_failures: analyze_e2e_failures
+
+    analyze_e2e_failures:
+      agent: orchestrator
+      description: "Analyze E2E failures"
+      actions:
+        - type: categorize_failures
+        - type: create_fix_tasks
+        - type: add_to_queue
+      transitions:
+        on_added: check_next_task
+
+    capture_major_screens:
+      description: "Capture screenshots of major screens"
+      dynamic_agent: e2e_tester
+      condition: evidence_capture
+      actions:
+        - type: identify_major_screens
+        - type: for_each_screen
+          actions:
+            - navigate_to
+            - wait_for_stable
+            - capture_full_page
+        - type: organize_gallery
+        - type: memory.write
+          key: major_screens_captured
+      transitions:
+        on_complete: final_validation
+
+    final_validation:
+      description: "Validate against specifications"
+      dynamic_agent: spec_validator
+      actions:
+        - type: load_specifications
+        - type: validate_completeness
+        - type: validate_scope
+        - type: validate_quality
+        - type: create_validation_report
+        - type: memory.write
+          key: validation_complete
+      transitions:
+        if_valid: compile_summary
+        if_issues: address_validation_issues
+
+    address_validation_issues:
+      agent: orchestrator
+      actions:
+        - type: categorize_issues
+        - type: create_fix_tasks
+        - type: add_to_queue
+      transitions:
+        on_added: check_next_task
+
+    compile_summary:
+      description: "Compile build summary"
+      dynamic_agent: evidence_collector
+      actions:
+        - type: memory.read
+          scope: all_build_data
+        - type: create_build_summary
+          sections:
+            - executive_summary
+            - implementation_summary
+            - quality_metrics
+            - test_results
+            - visual_evidence
+            - spec_compliance
+            - known_issues
+        - type: create_test_report
+        - type: organize_evidence
+        - type: filesystem.write
+          path_from_param: output_path
+      transitions:
+        on_success: announce_complete
+
+    announce_complete:
+      agent: orchestrator
+      actions:
+        - type: announce
+          template: |
+            BUILD CYCLE COMPLETE
+
+            Tasks: {completed}/{total}
+            Tests: {passing}/{total_tests}
+            Coverage: {coverage}%
+
+            Artifacts ready at: {output_path}
+      transitions:
+        on_success: build_complete
+
+    escalate_failure:
+      agent: orchestrator
+      actions:
+        - type: create_escalation_report
+        - type: filesystem.write
+      transitions:
+        on_success: build_failed
+
+    escalate_blocker:
+      agent: orchestrator
+      actions:
+        - type: create_blocker_report
+      transitions:
+        on_success: build_failed
+
+    # EXIT STATES
+
+    build_complete:
+      final: true
+      status: BUILD_COMPLETE
+      outputs:
+        - build_summary_from_param: output_path
+        - test_report
+        - evidence_gallery
+        - working_artifact
+
+    build_failed:
+      final: true
+      status: BUILD_FAILED
+      requires: human_decision
+      outputs:
+        - escalation_report
+        - partial_implementation
